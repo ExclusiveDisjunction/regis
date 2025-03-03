@@ -87,6 +87,12 @@ impl LoggerWrite {
             level
         }
     }
+    pub fn new_str(contents: String, level: LoggerLevel) -> Self {
+        Self {
+            contents,
+            level
+        }
+    }
 
     pub fn ignore(&self, level: LoggerLevel) -> bool {
         self.level < level
@@ -180,6 +186,18 @@ impl LoadedLogger {
         self.write = None;
         Ok(())
     }
+
+    /// Regardless of a log being currently in progress or not, this will direclty write a string into the log file. 
+    pub fn write_direct(&mut self, contents: String, level: LoggerLevel) -> Result<(), std::io::Error> {
+        let write = LoggerWrite::new_str(
+            format!("{:?} {:?} {}\n", chrono::Local::now(), level, contents),
+            level
+        );
+        self.redirect.handle_redirect(&write);
+        
+        self.file.write(write.contents().as_bytes())?;
+        Ok(())
+    }
 }
 
 /// A simple structure to handle poison errors as None, and provides a wrapper around the mutex lock.
@@ -247,8 +265,13 @@ impl Logger {
         self.data.clear_poison(); //Since this function is always overriding the stored value, it is ok to clear the error.
     }
     pub fn close(&self) {
-        if let Ok(mut v) = self.data.lock() {
-            *v = None;
+        match self.data.lock() {
+            Ok(mut v) => *v = None,
+            Err(e) => {
+                let mut inner = e.into_inner();
+                *inner = None;
+                self.data.clear_poison();
+            }
         }
     }
     pub fn is_open(&self) -> bool {
@@ -296,9 +319,7 @@ macro_rules! logger_write {
                     let contents: String = format!($($arg)*);
 
                     if let Some(cont) = aquired.access_mut() {
-                        cont.start_log(true_level).unwrap();
-                        cont.write(&contents);
-                        if let Err(e) = cont.end_log() {
+                        if let Err(e) = cont.write_direct(contents, true_level) {
                             eprintln!("unable to end log because of '{:?}'. Log will be closed", e);
                             $crate::log::logging.close();
                         }

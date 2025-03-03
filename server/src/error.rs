@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Display};
 
+use serde_json::Error as JsonError;
+
 #[derive(PartialEq, Eq, Clone)]
 pub struct ArgumentMissingError {
     arg: String
@@ -218,6 +220,27 @@ impl Debug for NamingError {
     }
 }
 
+pub struct PoisonError {
+    message: String
+}
+impl Debug for PoisonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (self as &dyn Display).fmt(f)
+    }
+}
+impl Display for PoisonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "poisoned due to '{}'", &self.message)
+    }
+}
+impl PoisonError {
+    pub fn new<T: Display>(message: &T) -> Self {
+        Self {
+            message: message.to_string()
+        }
+    }
+}
+
 pub enum Error {
     ArgVal(ArgumentValueError),
     ArgMiss(ArgumentMissingError),
@@ -337,5 +360,22 @@ impl Display for IOError {
         };
 
         x.fmt(f)
+    }
+}
+
+/// Represents errors that come from Serde JSON or IO. 
+#[derive(Debug)]
+pub enum ParsingError {
+    Serde(JsonError),
+    IO(std::io::Error)
+}
+impl From<JsonError> for ParsingError {
+    fn from(value: JsonError) -> Self {
+        Self::Serde(value)
+    }
+}
+impl From<std::io::Error> for ParsingError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IO(value)
     }
 }
