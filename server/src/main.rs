@@ -13,7 +13,8 @@ use log::{logging, LoggerLevel, LoggerRedirect};
 
 use std::process::ExitCode;
 
-fn main() -> Result<(), ExitCode>{
+#[tokio::main]
+async fn main() -> Result<(), ExitCode>{
     // Start logger
 
     let level: LoggerLevel;
@@ -42,7 +43,7 @@ fn main() -> Result<(), ExitCode>{
     log_info!("Configuration loaded.");
 
     log_info!("Check complete, handling tasks to orchestrator");
-    let mut orch = Orchestrator::initialize()?;
+    let mut orch = Orchestrator::initialize();
 
-    orch.run()
+    orch.run().await
 }
