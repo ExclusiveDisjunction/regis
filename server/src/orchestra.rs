@@ -18,44 +18,88 @@ use crate::connect::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Request {
-    Poll, //Asks the thread its current status 
-    Kill, //Tells the thread to stop executing and clean up resources 
-    SystemShutdown, // A client to controller message to shutdown the whole server
-    Panic(bool), // A message that indicates a panic. If the value contained is true, the controller should restart the task. 
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Response {
-    Busy, //The task has an active connection
-    Inactive, //The task has no active work, but is listening for work.
-    Ok, //Everything is ok
+pub enum ClientComm {
+    /// A request to see if the thread in question is working fine.
+    Poll,
+    /// A command to tell that task to stop executing.
+    Kill,
+    /// A message from the orchestrator to reload configuration. 
+    ReloadConfiguration,
+
+    /// A response to a poll that indicates that the task in question has connections.
+    Busy,
+    /// A response to a poll that indicates that the task in question has no connections, but is active. 
+    Inactive,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Comm {
-    Req(Request),
-    Resp(Response)
-}
-impl From<Request> for Comm {
-    fn from(value: Request) -> Self {
-        Self::Req(value)
-    }
-}
-impl From<Response> for Comm {
-    fn from(value: Response) -> Self {
-        Self::Resp(value)
-    }
+pub enum ConsoleComm {
+    /// A request to see if the thread in question is working fine. 
+    Poll,
+    /// A command to tell that task to stop executing. 
+    Kill,
+
+    /// A message to the ochestrator to shutdown all tasks. 
+    SystemShutdown,
+    //// A message to the ochestrator to tell other tasks to reload configuration.
+    ReloadConfiguration,
+    
+    /// A response to a poll that indicates that the task in question has connections.
+    Busy,
+    /// A response to a poll that indicates that the task in question has no connections, but is active. 
+    Inactive
 }
 
-type RunningThread = (tokio::task::JoinHandle<()>, mpsc::Sender<Comm>);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetricComm {
+    /// A request to see if the thread in question is working fine.
+    /// Note that the metric thread need not respond to this message. The worker must simply empty the message queue. 
+    Poll,
+    /// A command to tell that task to stop executing.
+    Kill,
+
+    /// A command to tell the task to reload its configuration settings.
+    ReloadConfiguration
+}
 
 /// The amount of time between each task "poll". 
 pub const TASK_CHECK_TIMEOUT: u64 = 40;
+pub const TASKS_DEFAULT_BUFFER: usize = 10;
+
+/// A combination of required tools for accessing and communicating with tasks.
+pub struct TaskHandle<T> where T: Copy + Clone + Send + 'static {
+    join: JoinHandle<()>,
+    sender: mpsc::Sender<T>,
+    receiver: mpsc::Receiver<T>
+}
+impl<T> TaskHandle<T> where T: Copy + Clone + Send + 'static {
+    pub fn new(join: JoinHandle<()>, sender: mpsc::Sender<T>, receiver: mpsc::Receiver<T>) -> Self {
+        
+    }
+
+    pub fn start<F, Fut>(func: F) -> Self 
+    where F: FnOnce(mpsc::Sender<T>, mpsc::Receiver<T>) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static {
+        let (my_sender, their_recv) = mpsc::channel::<T>(TASKS_DEFAULT_BUFFER);
+        let (their_sender, my_recv) = mpsc::channel::<T>(TASKS_DEFAULT_BUFFER);
+
+        let handle = tokio::spawn(async move {
+            (func)(their_sender, their_recv).await
+        });
+
+        Self {
+            join: handle,
+            sender: my_sender,
+            receiver: my_recv
+        }
+    }
+}
+
 
 pub struct Orchestrator {
     recv: mpsc::Receiver<Comm>,
     sender: mpsc::Sender<Comm>,
-    client_thread: RunningThread,
+    client_thread: (JoinHandle<()>, mpsc::Sender<ClientComm>, mpsc::Receiver<ClientComm>),
     metric_thread: RunningThread,
     console_thread: RunningThread
 }
@@ -120,38 +164,18 @@ impl Orchestrator {
         (timer_sender, timer_receiver, timer_handle)
     }
 
-    /// Spwans a task that will listen for the SIGTERM event. 
-    fn spawn_shutdown() -> (oneshot::Sender<()>, mpsc::Receiver<()>, JoinHandle<()>) {
+    /// Will spawn the needed timing and shutdown tasks, and will conduct polls & restart tasks as needed.
+    pub async fn run(&mut self) -> Result<(), ExitCode> {
+        // This thread will do polls to determine if threads need to be spanwed. 
+
+        //This needs a timer thread. At a periodic time, this timer will signal this main thread to send out poll requests. It only works with the unit type. If it receives a message, it will immediatley exit. 
+        let (timer_sender, mut timer_receiver, timer_handle) = Self::spawn_timer();
+
+        // To handle SIGTERM, since this is a daemon, a separate task needs to be made 
         let mut term_signal = match signal(SignalKind::terminate()) {
             Ok(v) => v,
             Err(e) => panic!("Unable to generate sigterm signal handler '{e}'")
         };
-
-        let (shutdown_s, shutdown_r) = mpsc::channel::<()>(1);
-        let (signal_s, signal_r) = oneshot::channel::<()>();
-        let signal_handle = tokio::spawn(async move {
-            select! {
-                _ = term_signal.recv() => {
-                    let _ = shutdown_s.send(()).await;
-                },
-                _ = signal_r => {
-                    return;
-                }
-            }
-        });
-
-        (signal_s, shutdown_r, signal_handle)
-    }
-
-    /// Will spawn the needed timing and shutdown tasks, and will conduct polls & restart tasks as needed.
-    pub async fn run(&mut self) -> Result<(), ExitCode> {
-        // This thread will do polls to determine if threads need to be spanwed. 
-        
-        // To handle SIGTERM, since this is a daemon, a separate task will be made. 
-        let (shutdown_signal, mut shutdown_r, shutdown_handle) = Self::spawn_shutdown();
-
-        //This needs a timer thread. At a periodic time, this timer will signal this main thread to send out poll requests. It only works with the unit type. If it receives a message, it will immediatley exit. 
-        let (timer_sender, mut timer_receiver, timer_handle) = Self::spawn_timer();
 
         // Critical code
         loop {
@@ -167,7 +191,7 @@ impl Orchestrator {
                 v = self.recv.recv() => {
 
                 },
-                _ = shutdown_r.recv() => {
+                _ = term_signal.recv() => {
 
                 }
             }
@@ -177,13 +201,9 @@ impl Orchestrator {
         if let Err(e) = timer_sender.send(()).await {
             log_warning!("When shutting down timer thread, got error '{e}'");
         }
-        let _ = shutdown_signal.send(()); //Tell the SIGTERM listener to stop listening 
 
         if let Err(e) = timer_handle.await {
             log_warning!("Timer thread could not be joined because of '{e}'")
-        }
-        if let Err(e) = shutdown_handle.await {
-            log_warning!("Shutown thread could not be joined because of '{e}'");
         }
 
         Ok(())
