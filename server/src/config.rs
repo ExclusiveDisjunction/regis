@@ -5,7 +5,6 @@ use lazy_static::lazy_static;
 
 use std::io::{Read, Write};
 use std::fs::File;
-use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 

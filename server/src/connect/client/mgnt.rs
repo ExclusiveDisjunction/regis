@@ -1,6 +1,5 @@
 use std::net::{Ipv4Addr, TcpListener};
 use std::net::SocketAddr;
-use std::fmt::Display;
 
 use tokio::sync::mpsc::Receiver;
 use tokio::net::{TcpSocket, TcpStream};

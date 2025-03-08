@@ -139,7 +139,7 @@ pub async fn shutdown<Task>(handle: Task) -> Result<Option<Task::Output>, JoinEr
 /// If the task is currently running, it will send the `signal` value. After that, if the send was ok, it will join the handle. Note that errors are not considered nor recorded.
 pub async fn shutdown_explicit<Task>(handle: Task,  signal: Task::Msg) -> Result<Option<Task::Output>, JoinError> where Task: TaskBasis{
     if handle.is_running() && send(&handle, signal).await.is_ok() {
-        join(handle).await.map(|x| Some(x))
+        join(handle).await.map(Some)
     }
     else {
         Ok(None)
