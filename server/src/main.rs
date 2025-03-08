@@ -6,6 +6,8 @@ pub mod log;
 pub mod core;
 pub mod orchestra;
 pub mod locations;
+pub mod task_util;
+pub mod message;
 
 use config::CONFIG;
 use orchestra::Orchestrator;
@@ -43,7 +45,7 @@ async fn main() -> Result<(), ExitCode>{
     log_info!("Configuration loaded.");
 
     log_info!("Check complete, handling tasks to orchestrator");
-    let mut orch = Orchestrator::initialize();
+    let orch = Orchestrator::initialize();
 
     orch.run().await
 }

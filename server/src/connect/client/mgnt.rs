@@ -1,7 +1,7 @@
-use tokio::sync::mpsc::{Sender, Receiver};
+use tokio::sync::mpsc::Receiver;
 
-use crate::orchestra::SimpleComm;
+use crate::message::SimpleComm;
 
-pub async fn client_entry(orch: Sender<SimpleComm>, recv: Receiver<SimpleComm>) {
+pub async fn client_entry(recv: Receiver<SimpleComm>) {
 
 }

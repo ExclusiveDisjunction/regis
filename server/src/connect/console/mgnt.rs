@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::{Sender, Receiver};
 
-use crate::orchestra::ConsoleComm;
+use crate::message::ConsoleComm;
 
-pub async fn console_entry(orch: Sender<ConsoleComm>, recv: Receiver<ConsoleComm>) {
+pub async fn console_entry((orch, recv): (Sender<ConsoleComm>, Receiver<ConsoleComm>)) {
 
 }

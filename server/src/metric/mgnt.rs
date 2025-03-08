@@ -1,7 +1,7 @@
-use tokio::sync::mpsc::{Sender, Receiver};
+use tokio::sync::mpsc::Receiver;
 
-use crate::orchestra::MetricComm;
+use crate::message::SimpleComm;
 
-pub async fn metrics_entry(orch: Sender<MetricComm>, recv: Receiver<MetricComm>) {
+pub async fn metrics_entry(recv: Receiver<SimpleComm>) {
 
 }

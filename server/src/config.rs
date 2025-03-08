@@ -168,6 +168,18 @@ impl ConfigurationProvider {
             Err(serde_json::Error::custom(err).into())
         }
     }
+    pub fn set_to_default(&self) {
+        {
+            let mut lock = match self.data.write() {
+                Ok(v) => v,
+                Err(e) => e.into_inner()
+            };
+    
+            *lock = Some(Configuration::default());
+        }
+        
+        self.data.clear_poison();
+    }
 
     pub fn close(&self) {
         match self.data.write() {
