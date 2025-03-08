@@ -77,3 +77,38 @@ impl Display for ConsoleComm {
         )
     }
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum WorkerTaskResult {
+    Ok,
+    Configuration,
+    DoNotReboot,
+    Sockets,
+    Failure
+}
+impl Display for WorkerTaskResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Ok => "ok",
+                Self::Configuration => "configuration issue",
+                Self::DoNotReboot => "error, unable to reboot",
+                Self::Sockets => "sockets error",
+                Self::Failure => "general failure, rebootable"
+            }
+        )
+    }
+}
+impl WorkerTaskResult {
+    pub fn rebootable(&self) -> bool {
+        matches!(self, Self::Ok | Self::Failure | Self::Sockets)
+    }
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok)
+    }
+    pub fn is_err(&self) -> bool {
+        !self.is_ok()
+    }
+}

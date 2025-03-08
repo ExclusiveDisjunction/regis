@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 
 use std::io::{Read, Write};
 use std::fs::File;
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -15,11 +16,10 @@ use crate::locations::{BROADCAST_PORT, CONSOLE_PORT, HOSTS_PORT};
 pub struct Configuration {
     pub max_console: u8,
     pub max_hosts: u8,
-    pub console_port: u32,
-    pub hosts_port: u32,
-    pub broadcasts_port: u32,
-    pub metric_frec: u32,
-
+    pub console_port: u16,
+    pub hosts_port: u16,
+    pub broadcasts_port: u16,
+    pub metric_frec: u64
 }
 impl Default for Configuration {
     fn default() -> Self {
@@ -29,7 +29,7 @@ impl Default for Configuration {
             console_port: CONSOLE_PORT,
             hosts_port: HOSTS_PORT,
             broadcasts_port: BROADCAST_PORT,
-            metric_frec: 1
+            metric_frec: 1,
         }
     }
 }

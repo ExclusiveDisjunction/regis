@@ -1,13 +1,10 @@
 use tokio::{
-    select, 
-    signal::unix::{
+    select, signal::unix::{
         signal, 
         SignalKind
-    },
-    sync::mpsc::{Sender, Receiver}
+    }, task::JoinError, time::{interval, Duration}
 };
 
-use std::time::Duration;
 use std::process::ExitCode;
 
 use crate::{
@@ -17,25 +14,33 @@ use crate::{
     }, locations::CONFIG_PATH, log_critical, log_debug, log_error, log_info, log_warning, metric::mgnt::metrics_entry
 };
 use crate::{
-    message::{ConsoleComm, SimpleComm},
-    task_util::{SimplexTask, DuplexTask, TaskBasis}
+    message::{ConsoleComm, SimpleComm, WorkerTaskResult},
+    task_util::{
+        SimplexTask, 
+        DuplexTask,
+        RestartableTask,
+        recv,
+        shutdown
+    }
+    
 };
 
 /// The amount of time between each task "poll". 
 pub const TASK_CHECK_TIMEOUT: u64 = 40;
-
+/// The buffer size for a default channel buffer. 
+pub const TASKS_DEFAULT_BUFFER: usize = 10;
 
 
 pub struct Orchestrator {
-    client_thread: SimplexTask<SimpleComm>,
-    metric_thread: SimplexTask<SimpleComm>,
-    console_thread: DuplexTask<ConsoleComm>
+    client_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
+    metric_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
+    console_thread: RestartableTask<DuplexTask<ConsoleComm, WorkerTaskResult>>
 }
 impl Orchestrator {
     pub fn initialize() -> Self{
-        let client_thread = SimplexTask::start(client_entry);
-        let console_thread = DuplexTask::start(console_entry);
-        let metric_thread = SimplexTask::start(metrics_entry);
+        let client_thread = RestartableTask::start(client_entry,TASKS_DEFAULT_BUFFER, 5);
+        let console_thread = RestartableTask::start(console_entry, TASKS_DEFAULT_BUFFER, 5);
+        let metric_thread = RestartableTask::start(metrics_entry, TASKS_DEFAULT_BUFFER, 5);
 
         Self {
             client_thread,
@@ -44,33 +49,13 @@ impl Orchestrator {
         }
     }
 
-    /// Spawns a timer thread, used to establish some sort of needed task over time.
-    pub fn spawn_timer() -> DuplexTask<()> {
-        let function = async |(sender, mut receiver): (Sender<()>, Receiver<()>)| -> () {
-            loop {
-                select! {
-                    _ = tokio::time::sleep(Duration::from_secs(TASK_CHECK_TIMEOUT)) => {
-                        if sender.send(()).await.is_err() {
-                            return;
-                        }
-                    },
-                    _ = receiver.recv() => {
-                        return; //Getting anything is considering a close, error or not.
-                    }
-                }
-            }
-        };
-
-        DuplexTask::<()>::start(function)
-    }
-
     /// Will spawn the needed timing and shutdown tasks, and will conduct polls & restart tasks as needed.
     pub async fn run(mut self) -> Result<(), ExitCode> {
         // This thread will do polls to determine if threads need to be spanwed. 
 
         //This needs a timer thread. At a periodic time, this timer will signal this main thread to send out poll requests. It only works with the unit type. If it receives a message, it will immediatley exit. 
         log_info!("Spawning timer & SIGTERM threads...");
-        let mut timer_handle = Self::spawn_timer();
+        let mut timer = interval(Duration::from_secs(TASK_CHECK_TIMEOUT));
 
         // To handle SIGTERM, since this is a daemon, a separate task needs to be made 
         let mut term_signal = match signal(SignalKind::terminate()) {
@@ -82,33 +67,28 @@ impl Orchestrator {
         // Critical code
         loop {
             select! {
-                p = timer_handle.recv() => {
+                _ = timer.tick() => {
                     log_debug!("Timer tick activated");
-                    match p {
-                        Some(_) => {
-                            log_debug!("(Orch) Beginning polls...");
-                            let mut result: bool = true;
+                    log_debug!("(Orch) Beginning polls...");
+                    let mut result: bool = true;
 
-                            result &= self.client_thread.poll_and_restart(client_entry).await;
-                            result &= self.metric_thread.poll_and_restart(metrics_entry).await;
-                            result &= self.console_thread.poll_and_restart(console_entry).await;
-                            
-                            if !result {
-                                log_debug!("(Orch) Polls complete, failure.");
-                                log_critical!("Unable to restart one or more worker threads, shutting down threads.");
-                                break;
-                            }
-
-                            log_debug!("(Orch) Polls complete, success.");
-                        },
-                        None => break
+                    result &= self.client_thread.poll_and_restart(client_entry, TASKS_DEFAULT_BUFFER).await;
+                    result &= self.metric_thread.poll_and_restart(metrics_entry, TASKS_DEFAULT_BUFFER).await;
+                    result &= self.console_thread.poll_and_restart(console_entry, TASKS_DEFAULT_BUFFER).await;
+                    
+                    if !result {
+                        log_debug!("(Orch) Polls complete, failure.");
+                        log_critical!("Unable to restart one or more worker threads, shutting down threads.");
+                        break;
                     }
+
+                    log_debug!("(Orch) Polls complete, success.");
                 },
                 _ = term_signal.recv() => {
                     log_info!("SIGTERM message from OS received, shutting down threads.");
                     break;
                 },
-                m = self.console_thread.recv() => {
+                m = recv(&mut self.console_thread) => {
                     if let Some(m) = m {
                         match m {
                             ConsoleComm::ReloadConfiguration => {
@@ -128,7 +108,7 @@ impl Orchestrator {
                     }
                     else {
                         log_info!("Console thread unexpectedly closed. Attempting to restart...");
-                        if !self.console_thread.restart(console_entry) {
+                        if !self.console_thread.restart(console_entry, TASKS_DEFAULT_BUFFER) {
                             log_critical!("Unable to restart console thread. Shutting down tasks...");
                             break;
                         }
@@ -139,20 +119,27 @@ impl Orchestrator {
         }
 
         // Shutting down threads
-        log_info!("Shutting down timer thread...");
-        timer_handle.shutdown_explicit(()).await;
-        log_info!("Timer thread shut down.");
-
         self.shutdown().await;
     
         Ok(())
     }
 
     pub async fn shutdown(self) {
-        log_info!("Shutting down client, console, and metric threads...");
-        self.client_thread.shutdown().await;
-        self.console_thread.shutdown().await;
-        self.metric_thread.shutdown().await;
-        log_info!("Threads shut down.");
+        let transform = |x: Result<Option<WorkerTaskResult>, JoinError>| -> String {
+            match x {
+                Ok(v) => {
+                    match v {
+                        Some(v) => v.to_string(),
+                        None => "Already Joined".to_string()
+                    }
+                },
+                Err(e) => format!("join error: '{e}'")
+            }
+        };
+
+        log_info!("Client task shutdown with response '{}'", transform(shutdown(self.client_thread).await));
+        log_info!("Console task shutdown with response '{}'", transform(shutdown(self.console_thread).await));
+        log_info!("Metric task shutdown with response '{}'", transform(shutdown(self.metric_thread).await));
+        log_info!("Tasks shut down."); 
     }
 }

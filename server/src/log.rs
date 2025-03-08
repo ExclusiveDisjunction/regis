@@ -195,7 +195,7 @@ impl LoadedLogger {
         );
         self.redirect.handle_redirect(&write);
         
-        self.file.write(write.contents().as_bytes())?;
+        self.file.write_all(write.contents().as_bytes())?;
         Ok(())
     }
 }
