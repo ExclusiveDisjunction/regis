@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender, error::SendError}, 
     task::{
@@ -55,6 +57,7 @@ pub trait StartableTask: TaskBasis where Self: Sized {
         } 
 }
 
+/// A wrapper around a task that can be restarted. It requires that the task is a `StartableTask`. It will keep track of how many times the task will be restarted.
 pub struct RestartableTask<Task> 
     where Task: StartableTask  {
         task: Task,
@@ -107,6 +110,7 @@ impl<Task> RestartableTask<Task>
                 }
         }
 
+        /// Restarts the current task, but if the tries are exceeded, it will return false.
         pub fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Task::Output> + Send + 'static {
@@ -120,11 +124,24 @@ impl<Task> RestartableTask<Task>
                 true
         }
 
+        /// Performs a poll on the task. If the poll fails, it will restart the task according to `self.restart`. 
         pub async fn poll_and_restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Task::Output> + Send + 'static,  
              Task::Msg: PollableMessage {
                 poll(&mut self.task).await || self.restart(func, buffer_size)
+        }
+
+        pub fn can_restart(&self) -> bool {
+            self.restart_count >= self.max_restart
+        }
+        pub fn restarts_left(&self) -> u8 {
+            if self.restart_count >= self.max_restart {
+                0
+            }
+            else {
+                self.max_restart - self.restart_count
+            }
         }
 }
 
@@ -270,6 +287,116 @@ impl<T, O> SimplexTask<T, O> where T: Send + 'static, O: Send + 'static{
         Self {
             join,
             sender
+        }
+    }
+}
+
+/// A combination of required tools for accessing and communicating with tasks, with additionall input value `A`.
+pub struct ArgDuplexTask<T, O, A> where T: Send + 'static, O: Sized, A: Sized {
+    join: JoinHandle<O>,
+    sender: Sender<T>,
+    receiver: Receiver<T>,
+    _mark: PhantomData<A>
+}
+impl<T, O, A> TaskBasis for ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static {
+    type Arg = (Sender<T>, Receiver<T>, A);
+    type Msg = T;
+    type Output = O;
+
+    fn join_handle(&self) -> &JoinHandle<O> {
+        &self.join
+    }
+    fn join_handle_owned(self) -> JoinHandle<O> {
+        self.join
+    }
+    fn sender(&self) -> &Sender<T> {
+        &self.sender
+    }
+}
+impl<T, O, A> RecvTaskBasis for ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static {
+    fn receiver(&self) -> &Receiver<T> {
+        &self.receiver
+    }
+    fn receiver_mut(&mut self) -> &mut Receiver<T> {
+        &mut self.receiver
+    }
+}
+impl<T, O, A> ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static  {
+    /// Generates a `TaskHandle` from predetermined channels and join handle.
+    pub fn new(join: JoinHandle<O>, sender: Sender<T>, receiver: Receiver<T>) -> Self {
+        Self {
+            join,
+            sender,
+            receiver,
+            _mark: PhantomData::default()
+        }
+    }
+
+    pub fn start<F, Fut>(func: F, buffer_size: usize, extra: A) -> Self 
+        where F: FnOnce(<Self as TaskBasis>::Arg) -> Fut + Send + 'static,
+        Fut: Future<Output = <Self as TaskBasis>::Output> + Send + 'static {
+            let (my_sender, their_recv) = channel::<<Self as TaskBasis>::Msg>(buffer_size);
+            let (their_sender, my_recv) = channel::<<Self as TaskBasis>::Msg>(buffer_size);
+
+            let handle = tokio::spawn(async move {
+                (func)((their_sender, their_recv, extra)).await
+            });
+
+            Self {
+                join: handle,
+                sender: my_sender,
+                receiver: my_recv,
+                _mark: PhantomData::default()
+            }
+    }
+}
+
+/// A combination of required tools for accessing and communicating with tasks, with additionall input value `A`.
+pub struct ArgSimplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static {
+    join: JoinHandle<O>,
+    sender: Sender<T>,
+    _mark: PhantomData<A>
+}
+impl<T, O, A> TaskBasis for ArgSimplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static {
+    type Arg = Receiver<T>;
+    type Msg = T;
+    type Output = O;
+
+    fn join_handle(&self) -> &JoinHandle<O> {
+        &self.join
+    }
+    fn join_handle_owned(self) -> JoinHandle<O> {
+        self.join
+    }
+    fn sender(&self) -> &Sender<T> {
+        &self.sender
+    }
+}
+impl<T, O, A> ArgSimplexTask<T, O, A> where T: Send + 'static, O: Send + 'static, A: Send + 'static {
+    /// Generates a `TaskHandle` from predetermined channels and join handle.
+    pub fn new(join: JoinHandle<O>, sender: Sender<T>) -> Self {
+        Self {
+            join,
+            sender,
+            _mark: PhantomData::default()
+        }
+    }
+
+    pub fn start<F, Fut>(func: F, buffer_size: usize, extra: A) -> Self
+            where Self: Sized,
+            F: FnOnce(Receiver<T>, A) -> Fut + Send + 'static,
+            Fut: Future<Output = O> + Send + 'static {
+        
+        let (my_sender, their_recv) = channel::<T>(buffer_size);
+
+        let handle = tokio::spawn(async move {
+            (func)(their_recv, extra).await
+        });
+
+        Self {
+            join: handle,
+            sender: my_sender,
+            _mark: PhantomData::default()
         }
     }
 }
