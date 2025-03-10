@@ -13,18 +13,13 @@ use tokio::{
 use std::process::ExitCode;
 
 use crate::{
-    config::CONFIG,
-    locations::CONFIG_PATH,
-    metric::metrics_entry,
-    connect::{
-        client::client_entry,
-        console::console_entry
-    },
-    message::{
+    config::CONFIG, connect::{
+        broad::broad_entry, client::client_entry, console::console_entry
+    }, locations::CONFIG_PATH, message::{
         ConsoleComm,
         SimpleComm,
         WorkerTaskResult
-    }
+    }, metric::metrics_entry
 };
 
 use common:: {
@@ -51,18 +46,21 @@ pub const TASKS_DEFAULT_BUFFER: usize = 10;
 pub struct Orchestrator {
     client_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
     metric_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
-    console_thread: RestartableTask<DuplexTask<ConsoleComm, WorkerTaskResult>>
+    console_thread: RestartableTask<DuplexTask<ConsoleComm, WorkerTaskResult>>,
+    broad_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>
 }
 impl Orchestrator {
     pub fn initialize() -> Self{
         let client_thread = RestartableTask::start(client_entry,TASKS_DEFAULT_BUFFER, 5);
         let console_thread = RestartableTask::start(console_entry, TASKS_DEFAULT_BUFFER, 5);
         let metric_thread = RestartableTask::start(metrics_entry, TASKS_DEFAULT_BUFFER, 5);
+        let broad_thread = RestartableTask::start(broad_entry, TASKS_DEFAULT_BUFFER, 5);
 
         Self {
             client_thread,
             console_thread,
-            metric_thread
+            metric_thread,
+            broad_thread
         }
     }
 
@@ -92,6 +90,7 @@ impl Orchestrator {
                     result &= self.client_thread.poll_and_restart(client_entry, TASKS_DEFAULT_BUFFER).await;
                     result &= self.metric_thread.poll_and_restart(metrics_entry, TASKS_DEFAULT_BUFFER).await;
                     result &= self.console_thread.poll_and_restart(console_entry, TASKS_DEFAULT_BUFFER).await;
+                    result &= self.broad_thread.poll_and_restart(broad_entry, TASKS_DEFAULT_BUFFER).await;
                     
                     if !result {
                         log_debug!("(Orch) Polls complete, failure.");
@@ -157,6 +156,7 @@ impl Orchestrator {
         log_info!("Client task shutdown with response '{}'", transform(shutdown(self.client_thread).await));
         log_info!("Console task shutdown with response '{}'", transform(shutdown(self.console_thread).await));
         log_info!("Metric task shutdown with response '{}'", transform(shutdown(self.metric_thread).await));
+        log_info!("Broadcast task shutdown with response '{}'", transform(shutdown(self.broad_thread).await));
         log_info!("Tasks shut down."); 
     }
 }
