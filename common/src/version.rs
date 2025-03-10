@@ -85,9 +85,6 @@ impl Version {
     }
 }
 
-pub const REGIS_VERSION_1_0_0: Version = Version::new(1, 0, 0);
-pub const REGIS_CURRENT_VERSION: Version = REGIS_VERSION_1_0_0;
-
 #[test]
 pub fn test_version_functions() {
     let v1 = Version::new(1, 0, 0);

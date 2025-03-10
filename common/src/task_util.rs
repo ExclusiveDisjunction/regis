@@ -1,14 +1,21 @@
 use std::marker::PhantomData;
 
 use tokio::{
-    sync::mpsc::{channel, Receiver, Sender, error::SendError}, 
+    sync::mpsc::{channel, Receiver, Sender, error::SendError},
     task::{
-        JoinError, 
+        JoinError,
         JoinHandle
     }
 };
 
-use crate::message::{KillMessage, PollableMessage};
+/// A specific object that has a "kill" message value, such that if passed into a thread that listens to this message kind, it will stop executing.
+pub trait KillMessage : Send + Sized{
+    fn kill() -> Self;
+}
+/// A specific object that has a "poll"  message value, such that if passed into a thread that listens to this message kind, it will ignore it. 
+pub trait PollableMessage : Send + Sized {
+    fn poll() -> Self;
+}
 
 /// An abstraction over communication channel(s) and a join handle. It handles the spawning and resulting of different async tasks.
 pub trait TaskBasis {
@@ -37,14 +44,14 @@ pub trait RecvTaskBasis: TaskBasis {
 }
 pub trait StartableTask: TaskBasis where Self: Sized {
         /// Spanws a task using `tokio::spawn`, and establishes communication between the tasks and this thread.
-        fn start<F, Fut>(func: F, buffer_size: usize) -> Self where 
+        fn start<F, Fut>(func: F, buffer_size: usize) -> Self where
             Self: Sized,
             F: FnOnce(Self::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Self::Output> + Send + 'static;
 
         /// Resets the internal state of the object if the task is to be deleted.
         /// Fails if the task is still running.
-        fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where 
+        fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
             Self: Sized,
             F: FnOnce(Self::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Self::Output> + Send + 'static {
@@ -54,17 +61,17 @@ pub trait StartableTask: TaskBasis where Self: Sized {
 
                 *self = Self::start(func, buffer_size);
                 true
-        } 
+        }
 }
 
 /// A wrapper around a task that can be restarted. It requires that the task is a `StartableTask`. It will keep track of how many times the task will be restarted.
-pub struct RestartableTask<Task> 
+pub struct RestartableTask<Task>
     where Task: StartableTask  {
         task: Task,
         restart_count: u8,
         max_restart: u8,
 }
-impl<Task> TaskBasis for RestartableTask<Task>   
+impl<Task> TaskBasis for RestartableTask<Task>
     where Task: StartableTask {
         type Arg = Task::Arg;
         type Msg = Task::Msg;
@@ -89,7 +96,7 @@ impl<Task> RecvTaskBasis for RestartableTask<Task>
             self.task.receiver_mut()
         }
     }
-impl<Task> RestartableTask<Task>   
+impl<Task> RestartableTask<Task>
     where Task: StartableTask {
         /// Establishes a restartable task with a specific `max_restart` value.
         /// # Panics
@@ -124,10 +131,10 @@ impl<Task> RestartableTask<Task>
                 true
         }
 
-        /// Performs a poll on the task. If the poll fails, it will restart the task according to `self.restart`. 
+        /// Performs a poll on the task. If the poll fails, it will restart the task according to `self.restart`.
         pub async fn poll_and_restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
-            Fut: Future<Output = Task::Output> + Send + 'static,  
+            Fut: Future<Output = Task::Output> + Send + 'static,
              Task::Msg: PollableMessage {
                 poll(&mut self.task).await || self.restart(func, buffer_size)
         }
@@ -332,7 +339,7 @@ impl<T, O, A> ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static,
         }
     }
 
-    pub fn start<F, Fut>(func: F, buffer_size: usize, extra: A) -> Self 
+    pub fn start<F, Fut>(func: F, buffer_size: usize, extra: A) -> Self
         where F: FnOnce(<Self as TaskBasis>::Arg) -> Fut + Send + 'static,
         Fut: Future<Output = <Self as TaskBasis>::Output> + Send + 'static {
             let (my_sender, their_recv) = channel::<<Self as TaskBasis>::Msg>(buffer_size);

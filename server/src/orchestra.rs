@@ -1,28 +1,45 @@
 use tokio::{
-    select, signal::unix::{
+    select, 
+    signal::unix::{
         signal, 
         SignalKind
-    }, task::JoinError, time::{interval, Duration}
+    },
+    task::JoinError, 
+    time::{
+        interval,
+        Duration}
 };
 
 use std::process::ExitCode;
 
 use crate::{
-    config::CONFIG, connect::{
-        client::mgnt::client_entry, 
-        console::mgnt::console_entry
-    }, locations::CONFIG_PATH, log_critical, log_debug, log_error, log_info, log_warning, metric::mgnt::metrics_entry
+    config::CONFIG,
+    locations::CONFIG_PATH,
+    metric::metrics_entry,
+    connect::{
+        client::client_entry,
+        console::console_entry
+    },
+    message::{
+        ConsoleComm,
+        SimpleComm,
+        WorkerTaskResult
+    }
 };
-use crate::{
-    message::{ConsoleComm, SimpleComm, WorkerTaskResult},
+
+use common:: {
+    log_critical, 
+    log_error,
+    log_info,
+    log_warning,
+    log_debug,
     task_util::{
         SimplexTask, 
         DuplexTask,
-        RestartableTask,
-        recv,
+        RestartableTask, 
+        recv, 
         shutdown
     }
-    
 };
 
 /// The amount of time between each task "poll". 
