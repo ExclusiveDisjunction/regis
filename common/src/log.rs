@@ -114,6 +114,11 @@ impl LoggerWrite {
         self.contents += &new_cont;
     }
 }
+impl From<LoggerWrite> for Vec<u8> {
+    fn from(value: LoggerWrite) -> Self {
+        format!("{} {:?} {}\n", value.time_stamp, value.level, value.contents).into_bytes()
+    }
+}
 
 /// A structure that facilitates the writing done.
 pub struct LoadedLogger {
@@ -196,13 +201,14 @@ impl LoadedLogger {
     /// Regardless of a log being currently in progress or not, this will direclty write a string into the log file. 
     pub fn write_direct(&mut self, contents: String, level: LoggerLevel) -> Result<(), std::io::Error> {
         let write = LoggerWrite::new_str(
-            format!("{:?} {:?}", chrono::Local::now(), level),
+            format!("{}", chrono::Local::now()),
             contents,
             level
         );
         self.redirect.handle_redirect(&write);
+        let bytes: Vec<u8> = write.into();
         
-        self.file.write_all(write.contents().as_bytes())?;
+        self.file.write_all(&bytes)?;
         Ok(())
     }
 }
@@ -310,6 +316,8 @@ lazy_static! {
 macro_rules! logger_write {
     ($level: expr, $($arg:tt)*) => {
         {
+            let contents: String = format!($($arg)*);
+
             if $crate::log::logging.is_open() { //Do nothing, so that standard error is not flooded with 'not open' errors.
                 #[allow(unreachable_patterns)]
                 let true_level: $crate::log::LoggerLevel = match $level {
@@ -323,8 +331,6 @@ macro_rules! logger_write {
                 let mut aquired = $crate::log::logging.access();
 
                 if aquired.access().map(|x| true_level >= x.level() && !x.is_writing()).unwrap_or(false) {
-                    let contents: String = format!($($arg)*);
-
                     if let Some(cont) = aquired.access_mut() {
                         if let Err(e) = cont.write_direct(contents, true_level) {
                             eprintln!("unable to end log because of '{:?}'. Log will be closed", e);

@@ -141,21 +141,30 @@ impl Orchestrator {
             }
         };
 
+        let shutdowns = vec![
+            shutdown(self.client_thread).await,
+            shutdown(self.console_thread).await,
+            shutdown(self.metric_thread).await,
+            shutdown(self.broad_thread).await
+        ];
+        let mut iter = shutdowns.into_iter()
+        .map(transform);
+
         log_info!(
             "(Orch) Client task shutdown with response '{}'",
-            transform(shutdown(self.client_thread).await)
+            iter.next().unwrap()
         );
         log_info!(
             "(Orch) Console task shutdown with response '{}'",
-            transform(shutdown(self.console_thread).await)
+            iter.next().unwrap()
         );
         log_info!(
             "(Orch) Metric task shutdown with response '{}'",
-            transform(shutdown(self.metric_thread).await)
+            iter.next().unwrap()
         );
         log_info!(
             "(Orch) Broadcast task shutdown with response '{}'",
-            transform(shutdown(self.broad_thread).await)
+            iter.next().unwrap()
         );
         log_info!("(Orch) Tasks shut down.");
     }

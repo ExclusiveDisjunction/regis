@@ -1,13 +1,11 @@
 use common::log::{logging, LoggerLevel, LoggerRedirect};
 use common::version::Version;
 use common::{log_critical, log_info};
-use common::msg::{decode_response, send_request, Acknoledgement, DecodeError};
-use regisd_com::msg::{AuthenticateRequest, ShutdownRequest, UpdateConfigRequest};
+use common::msg::send_request;
+use regisd_com::msg::ConsoleRequests;
 
-#[cfg(all(unix))]
 use regisd_com::loc::SERVER_COMM_PATH;
 
-#[cfg(all(unix))]
 use tokio::net::UnixStream;
 use clap::{Parser, Subcommand};
 
@@ -32,26 +30,6 @@ enum Commands {
     Shutdown,
     /// Tell the daemon to reload its configuration file
     Config
-}
-
-#[cfg(all(unix))]
-async fn connect() -> Result<UnixStream, std::io::Error> {
-    let mut stream = UnixStream::connect(SERVER_COMM_PATH).await?;
-    let ack: Acknoledgement = decode_response(&mut stream).await
-        .map_err(|e| {
-            match e {
-                DecodeError::IO(e) => e,
-                DecodeError::Serde(e) => std::io::Error::new(std::io::ErrorKind::NetworkUnreachable, e),
-                DecodeError::UTF(e) => std::io::Error::new(std::io::ErrorKind::NetworkUnreachable, e),
-            }
-        })?;
-
-    if !ack.is_ok() {
-        log_critical!("Unable to open connection, with code '{}', message '{}'", ack.code(), ack.message().unwrap_or("(No message)"));
-        return Err(std::io::Error::new(std::io::ErrorKind::ResourceBusy, "the network was not able to serve the connection."));
-    }
-    
-    Ok(stream)
 }
 
 pub async fn entry() {
@@ -83,7 +61,7 @@ pub async fn entry() {
 
     //Connect
     log_info!("Connecting to regisd...");
-    let mut stream = match connect().await {
+    let mut stream = match UnixStream::connect(SERVER_COMM_PATH).await {
         Ok(v) => v,
         Err(e) => {
             log_critical!("Unable to connect to regisd: '{}'. Please ensure that it is loaded & running.", e);
@@ -91,20 +69,13 @@ pub async fn entry() {
         }
     };
 
-   let result = match command.command {
-        Commands::Auth => {
-            log_info!("Sending Authentication message to regisd...");
-            send_request(AuthenticateRequest, &mut stream).await
-        },
-        Commands::Config => {
-            log_info!("Sending Config message to regisd...");
-            send_request(UpdateConfigRequest, &mut stream).await
-        },
-        Commands::Shutdown => {
-            log_info!("Sending Shutdown message to regisd...");
-            send_request(ShutdownRequest, &mut stream).await
-        }
+   let request = match command.command {
+        Commands::Auth => ConsoleRequests::Auth,
+        Commands::Config => ConsoleRequests::Config,
+        Commands::Shutdown => ConsoleRequests::Shutdown
     };
+
+    let result = send_request(request, &mut stream).await;
     
     if let Err(e) = result {
         log_critical!("Unable to send message, reason '{e}'.");

@@ -1,7 +1,4 @@
-#[cfg(all(unix))]
-include!("work.rs");
-
-#[cfg(all(unix))]
+#[cfg(unix)]
 pub mod work;
 
 #[tokio::main]
@@ -11,6 +8,6 @@ async fn main() {
         std::process::exit(1);
     }
 
-    #[cfg(all(unix))]
+    #[cfg(unix)]
     work::entry().await;
 }

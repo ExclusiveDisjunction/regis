@@ -18,7 +18,10 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
 
                 match v {
                     SimpleComm::Poll => continue,
-                    SimpleComm::Kill => break,
+                    SimpleComm::Kill => {
+                        log_info!("(Metrics) Got kill message from Orch.");
+                        break;
+                    }
                     SimpleComm::ReloadConfiguration => {
                         log_info!("(Metrics) Configuration reloaded");
                         continue;

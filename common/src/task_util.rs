@@ -1,14 +1,13 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use tokio::{
-    sync::mpsc::{channel, Receiver, Sender, error::SendError},
-    task::{
+    select, sync::mpsc::{channel, error::SendError, Receiver, Sender}, task::{
         JoinError,
         JoinHandle
     }
 };
 
-use crate::{log_info, log_warning, log_critical};
+use crate::{log_debug, log_warning, log_critical};
 
 /// A specific object that has a "kill" message value, such that if passed into a thread that listens to this message kind, it will stop executing.
 pub trait KillMessage : Send + Sized{
@@ -98,7 +97,7 @@ impl RestartStatus {
 
     pub fn log_event(&self, name: &str) -> bool {
         match self {
-            Self::Ok => log_info!("Poll of thread '{}' was ok", name),
+            Self::Ok => log_debug!("Poll of thread '{}' was ok", name),
             Self::WasDead => log_warning!("Poll of thread '{}' determined it was dead, but was successfully restarted.", name),
             Self::TriesExceeded => log_critical!("Poll of thread '{}' determined it was dead, but cannot be restarted.", name)
         }
@@ -216,7 +215,19 @@ pub async fn shutdown<Task>(handle: Task) -> Result<Option<Task::Output>, JoinEr
 /// If the task is currently running, it will send the `signal` value. After that, if the send was ok, it will join the handle. Note that errors are not considered nor recorded.
 pub async fn shutdown_explicit<Task>(handle: Task,  signal: Task::Msg) -> Result<Option<Task::Output>, JoinError> where Task: TaskBasis{
     if handle.is_running() && send(&handle, signal).await.is_ok() {
-        join(handle).await.map(Some)
+        let handle = handle.join_handle_owned();
+        let abort_handle = handle.abort_handle();
+
+        select! { 
+            v = handle => {
+                v.map(Some)
+            },
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                log_warning!("(Shutdown) A task did not respond to shutdown signal, force aborting.");
+                abort_handle.abort();
+                Ok(None)
+            }
+        }
     }
     else {
         Ok(None)
@@ -388,7 +399,7 @@ impl<T, O, A> ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static,
             join,
             sender,
             receiver,
-            _mark: PhantomData::default()
+            _mark: PhantomData
         }
     }
 
@@ -406,7 +417,7 @@ impl<T, O, A> ArgDuplexTask<T, O, A> where T: Send + 'static, O: Send + 'static,
                 join: handle,
                 sender: my_sender,
                 receiver: my_recv,
-                _mark: PhantomData::default()
+                _mark: PhantomData
             }
     }
 }
@@ -438,7 +449,7 @@ impl<T, O, A> ArgSimplexTask<T, O, A> where T: Send + 'static, O: Send + 'static
         Self {
             join,
             sender,
-            _mark: PhantomData::default()
+            _mark: PhantomData
         }
     }
 
@@ -456,7 +467,7 @@ impl<T, O, A> ArgSimplexTask<T, O, A> where T: Send + 'static, O: Send + 'static
         Self {
             join: handle,
             sender: my_sender,
-            _mark: PhantomData::default()
+            _mark: PhantomData
         }
     }
 }

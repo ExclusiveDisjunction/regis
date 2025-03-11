@@ -1,55 +1,381 @@
-2025-03-11T00:21:44.437198-04:00 INFO Launching regisd...
-2025-03-11T00:21:44.437352-04:00 DEBUG Loading configuration
-2025-03-11T00:21:44.437382-04:00 WARNING Unable to load configuration, creating default for this initalization. Error: 'IO(Os { code: 2, kind: NotFound, message: "No such file or directory" })'
-2025-03-11T00:21:44.437400-04:00 INFO Configuration loaded.
-2025-03-11T00:21:44.437404-04:00 INFO Check complete, handling tasks to orchestrator
-2025-03-11T00:21:44.437498-04:00 INFO (Orch) Spawning timer & SIGTERM threads...
-2025-03-11T00:21:44.437514-04:00 INFO (Orch) Utility tasks loaded.
-2025-03-11T00:22:16.111380-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:16.111598-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:16.111697-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:16.111741-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:16.111778-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:16.111841-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:16.112208-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:16.112242-04:00 INFO (Orch) Polls complete, success.
-2025-03-11T00:22:16.112275-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:16.112291-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:16.112314-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:16.112333-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:16.112351-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:16.112373-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:16.112390-04:00 INFO (Orch) Polls complete, success.
-2025-03-11T00:22:16.112416-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:16.112688-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:16.112718-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:16.112745-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:16.112765-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:16.112786-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:16.112803-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:16.112819-04:00 INFO (Orch) Polls complete, success.
-2025-03-11T00:22:16.112844-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:16.113027-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:16.113045-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:16.113065-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:16.113080-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:16.113097-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:16.113118-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:16.113154-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:16.113181-04:00 INFO (Orch) Polls complete, success.
-2025-03-11T00:22:24.438563-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:24.438787-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:24.438875-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:24.438931-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:24.438988-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:24.439051-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:24.439191-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:24.439249-04:00 INFO (Orch) Polls complete, success.
-2025-03-11T00:22:34.439773-04:00 DEBUG (Orch) Timer tick activated
-2025-03-11T00:22:34.439966-04:00 INFO (Orch) Beginning polls...
-2025-03-11T00:22:34.440035-04:00 INFO Poll of thread 'client' was ok
-2025-03-11T00:22:34.440075-04:00 INFO Poll of thread 'metrics' was ok
-2025-03-11T00:22:34.440113-04:00 INFO Poll of thread 'console' was ok
-2025-03-11T00:22:34.440147-04:00 INFO (Console) Got message from Orch 'Some(Poll)'
-2025-03-11T00:22:34.440234-04:00 INFO Poll of thread 'broadcast' was ok
-2025-03-11T00:22:34.440269-04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:28:50.155714 -04:00 INFO Launching regisd...
+2025-03-11 16:28:50.156237 -04:00 DEBUG Loading configuration
+2025-03-11 16:28:50.156315 -04:00 WARNING Unable to load configuration, creating default for this initalization. Error: 'IO(Os { code: 2, kind: NotFound, message: "No such file or directory" })'
+2025-03-11 16:28:50.156333 -04:00 INFO Configuration loaded.
+2025-03-11 16:28:50.156338 -04:00 INFO Check complete, handling tasks to orchestrator
+2025-03-11 16:28:50.156412 -04:00 INFO (Orch) Spawning timer & SIGTERM threads...
+2025-03-11 16:28:50.156454 -04:00 INFO (Orch) Utility tasks loaded.
+2025-03-11 16:28:50.156537 -04:00 INFO (Console) Starting listener...
+2025-03-11 16:28:50.156979 -04:00 INFO (Console) Listener started.
+2025-03-11 16:28:50.157685 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:28:50.157702 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:28:50.157720 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:28:50.157735 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:28:50.157750 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:28:50.157762 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:28:50.157775 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:28:50.157789 -04:00 INFO (Console) Poll started...
+2025-03-11 16:28:50.157946 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:29:00.158986 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:29:00.159191 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:29:00.159299 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:29:00.159353 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:29:00.159400 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:29:00.159440 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:29:00.159477 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:29:00.159508 -04:00 INFO (Console) Poll started...
+2025-03-11 16:29:00.159624 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:44:22.401758 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:44:22.401941 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:44:22.402048 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:44:22.402101 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:44:22.402150 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:44:22.402190 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:44:22.402231 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:44:22.402273 -04:00 INFO (Console) Poll started...
+2025-03-11 16:44:22.402368 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:44:32.399465 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:44:32.399736 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:44:32.399845 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:44:32.399899 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:44:32.399950 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:44:32.400 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:44:32.400042 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:44:32.400093 -04:00 INFO (Console) Poll started...
+2025-03-11 16:44:32.400240 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:44:42.396866 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:44:42.397337 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:44:42.397474 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:44:42.397531 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:44:42.397581 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:44:42.397628 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:44:42.397671 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:44:42.397766 -04:00 INFO (Console) Poll started...
+2025-03-11 16:44:42.397839 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:44:52.399016 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:44:52.399207 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:44:52.399290 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:44:52.399323 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:44:52.399355 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:44:52.399380 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:44:52.399401 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:44:52.399476 -04:00 INFO (Console) Poll started...
+2025-03-11 16:44:52.399543 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:45:41.436419 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:45:41.436922 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:45:41.437059 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:45:41.437117 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:45:41.437167 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:45:41.437205 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:45:41.437249 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:45:41.437298 -04:00 INFO (Console) Poll started...
+2025-03-11 16:45:41.437390 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 16:45:51.435905 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 16:45:51.436169 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 16:45:51.436282 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 16:45:51.436346 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 16:45:51.436395 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 16:45:51.436438 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 16:45:51.436480 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 16:45:51.436533 -04:00 INFO (Console) Poll started...
+2025-03-11 16:45:51.437134 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:19:49.829632 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:19:49.830257 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:19:49.830344 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:19:49.830371 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:19:49.830394 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:19:49.830411 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:19:49.830428 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:19:49.830445 -04:00 INFO (Console) Poll started...
+2025-03-11 17:19:49.830503 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:19:59.826442 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:19:59.826974 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:19:59.827118 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:19:59.827176 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:19:59.827230 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:19:59.827270 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:19:59.827313 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:19:59.827365 -04:00 INFO (Console) Poll started...
+2025-03-11 17:19:59.827467 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:20:09.919082 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:20:09.920165 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:20:09.920308 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:20:09.920363 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:20:09.920415 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:20:09.920467 -04:00 INFO (Console) Poll started...
+2025-03-11 17:20:09.920592 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:20:09.920648 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:20:09.920713 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:20:21.596931 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:20:21.598086 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:20:21.598221 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:20:21.598282 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:20:21.598408 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:20:21.598446 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:20:21.598483 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:20:21.598532 -04:00 INFO (Console) Poll started...
+2025-03-11 17:20:21.598631 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:34:54.033882 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:34:54.034341 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:34:54.034465 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:34:54.034522 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:34:54.034574 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:34:54.034606 -04:00 INFO (Console) Poll started...
+2025-03-11 17:34:54.034718 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:34:54.034773 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:34:54.034837 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:35:05.713193 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:35:05.713428 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:35:05.713534 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:35:05.713589 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:35:05.713639 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:35:05.713679 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:35:05.713722 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:35:05.713772 -04:00 INFO (Console) Poll started...
+2025-03-11 17:35:05.714348 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:39:57.930809 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:39:57.931044 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:39:57.931153 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:39:57.931210 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:39:57.931257 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:39:57.931303 -04:00 INFO (Console) Poll started...
+2025-03-11 17:39:57.931414 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:39:57.931468 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:39:57.931513 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:40:09.627442 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:40:09.628390 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:40:09.628540 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:40:09.628592 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:40:09.628641 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:40:09.628694 -04:00 INFO (Console) Poll started...
+2025-03-11 17:40:09.628804 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:40:09.628867 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:40:09.628918 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:42:36.021762 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:42:36.022053 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:42:36.022159 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:42:36.022210 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:42:36.022262 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:42:36.022316 -04:00 INFO (Console) Poll started...
+2025-03-11 17:42:36.022443 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:42:36.022503 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:42:36.022547 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:43:04.271465 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:43:04.271816 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:43:04.271902 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:43:04.271928 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:43:04.272003 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:43:04.272032 -04:00 INFO (Console) Poll started...
+2025-03-11 17:43:04.272105 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:43:04.272130 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:43:04.272149 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:43:17.816452 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:43:17.817415 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:43:17.817506 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:43:17.817533 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:43:17.817598 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:43:17.817620 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:43:17.817641 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:43:17.817659 -04:00 INFO (Console) Poll started...
+2025-03-11 17:43:17.817710 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:54:57.655247 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:54:57.656578 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:54:57.656693 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:54:57.656747 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:54:57.656790 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:54:57.656830 -04:00 INFO (Console) Poll started...
+2025-03-11 17:54:57.656934 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:54:57.656989 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:54:57.657046 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 17:55:09.270391 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 17:55:09.270654 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 17:55:09.270764 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 17:55:09.270821 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 17:55:09.270870 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 17:55:09.270902 -04:00 INFO (Console) Poll started...
+2025-03-11 17:55:09.271017 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 17:55:09.271082 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 17:55:09.271129 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:06:29.162515 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:06:29.163623 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:06:29.163768 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:06:29.163822 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:06:29.163877 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:06:29.163917 -04:00 INFO (Console) Poll started...
+2025-03-11 18:06:29.164031 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:06:29.164090 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:06:29.164159 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:06:57.446404 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:06:57.446724 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:06:57.446838 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:06:57.446898 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:06:57.446947 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:06:57.446982 -04:00 INFO (Console) Poll started...
+2025-03-11 18:06:57.447127 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:06:57.447196 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:06:57.447255 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:18:40.226400 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:18:40.227436 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:18:40.227556 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:18:40.227594 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:18:40.227625 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:18:40.227648 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:18:40.227665 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:18:40.227823 -04:00 INFO (Console) Poll started...
+2025-03-11 18:18:40.227924 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:30:00.518701 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:30:00.519871 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:30:00.519999 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:30:00.520054 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:30:00.520102 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:30:00.520151 -04:00 INFO (Console) Poll started...
+2025-03-11 18:30:00.520260 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:30:00.520332 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:30:00.520390 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:30:11.309983 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:30:11.311100 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:30:11.311244 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:30:11.311303 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:30:11.311351 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:30:11.311388 -04:00 INFO (Console) Poll started...
+2025-03-11 18:30:11.311505 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:30:11.311562 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:30:11.311629 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:30:22.792015 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:30:22.792250 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:30:22.792356 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:30:22.792411 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:30:22.792460 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:30:22.792506 -04:00 INFO (Console) Poll started...
+2025-03-11 18:30:22.792622 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:30:22.792676 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:30:22.792720 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:37:53.198893 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:37:53.199861 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:37:53.199950 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:37:53.199976 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:37:53.200003 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:37:53.200019 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:37:53.200032 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:37:53.200052 -04:00 INFO (Console) Poll started...
+2025-03-11 18:37:53.200098 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:53:16.859688 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:53:16.859924 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:53:16.860033 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:53:16.860086 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:53:16.860136 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:53:16.860182 -04:00 INFO (Console) Poll started...
+2025-03-11 18:53:16.860281 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 18:53:16.860340 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:53:16.860383 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:55:30.603172 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 18:55:30.604402 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 18:55:30.604561 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 18:55:30.604622 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 18:55:30.604678 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 18:55:30.604717 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 18:55:30.604764 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 18:55:30.604810 -04:00 INFO (Console) Poll started...
+2025-03-11 18:55:30.604928 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:11:54.184177 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:11:54.184691 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:11:54.184823 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:11:54.184873 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:11:54.184915 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:11:54.184952 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:11:54.184992 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:11:54.185023 -04:00 INFO (Console) Poll started...
+2025-03-11 19:11:54.185128 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:12:04.193541 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:12:04.193803 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:12:04.193904 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:12:04.193956 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:12:04.193998 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:12:04.194027 -04:00 INFO (Console) Poll started...
+2025-03-11 19:12:04.194132 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:12:04.194181 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:12:04.194241 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:12:27.263836 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:12:27.264126 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:12:27.264206 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:12:27.264229 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:12:27.264255 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:12:27.264271 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:12:27.264293 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:12:27.264309 -04:00 INFO (Console) Poll started...
+2025-03-11 19:12:27.264361 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:12:40.472314 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:12:40.473148 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:12:40.473303 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:12:40.473341 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:12:40.473368 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:12:40.473389 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:12:40.473405 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:12:40.473433 -04:00 INFO (Console) Poll started...
+2025-03-11 19:12:40.473502 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:12:50.473725 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:12:50.473865 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:12:50.473941 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:12:50.473988 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:12:50.474032 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:12:50.474070 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:12:50.474102 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:12:50.474181 -04:00 INFO (Console) Poll started...
+2025-03-11 19:12:50.474292 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:00.473781 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:13:00.474338 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:13:00.474500 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:13:00.474555 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:13:00.474604 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:13:00.474642 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:13:00.474683 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:13:00.474760 -04:00 INFO (Console) Poll started...
+2025-03-11 19:13:00.474882 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:10.474006 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:13:10.474296 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:13:10.474409 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:13:10.474544 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:13:10.474599 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:13:10.474636 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:13:10.474674 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:13:10.474719 -04:00 INFO (Console) Poll started...
+2025-03-11 19:13:10.474857 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:20.474439 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:13:20.474565 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:13:20.474635 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:13:20.474678 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:13:20.474717 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:13:20.474745 -04:00 INFO (Console) Poll started...
+2025-03-11 19:13:20.474838 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:20.474895 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:13:20.474950 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:13:30.474792 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:13:30.476490 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:13:30.476649 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:13:30.476708 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:13:30.476765 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:13:30.476809 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:13:30.476857 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:13:30.476910 -04:00 INFO (Console) Poll started...
+2025-03-11 19:13:30.477014 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:40.474774 -04:00 DEBUG (Orch) Timer tick activated
+2025-03-11 19:13:40.475061 -04:00 INFO (Orch) Beginning polls...
+2025-03-11 19:13:40.475214 -04:00 DEBUG Poll of thread 'client' was ok
+2025-03-11 19:13:40.475266 -04:00 DEBUG Poll of thread 'metrics' was ok
+2025-03-11 19:13:40.475303 -04:00 DEBUG Poll of thread 'console' was ok
+2025-03-11 19:13:40.475327 -04:00 DEBUG Poll of thread 'broadcast' was ok
+2025-03-11 19:13:40.475347 -04:00 INFO (Orch) Polls complete, success.
+2025-03-11 19:13:40.475419 -04:00 INFO (Console) Poll started...
+2025-03-11 19:13:40.475487 -04:00 INFO (Console) Poll completed, pass? 'true' (dead: 0, failed: 0)
+2025-03-11 19:13:44.564429 -04:00 INFO (Orch) SIGINT message from OS received, shutting down threads.
+2025-03-11 19:13:44.565031 -04:00 INFO (Console) got shutdown message from Orch.
+2025-03-11 19:13:44.565110 -04:00 INFO (Console) Closing down tasks.
+2025-03-11 19:13:44.565138 -04:00 INFO (Console) 0/0 tasks joined with non-panic errors.
+2025-03-11 19:13:44.565160 -04:00 INFO (Console) Exiting task, result 'ok'
+2025-03-11 19:13:44.565268 -04:00 INFO (Metrics) Got kill message from Orch.
+2025-03-11 19:13:44.565296 -04:00 INFO (Metrics) Exiting task, result 'Ok'
+2025-03-11 19:13:44.565651 -04:00 INFO (Orch) Client task shutdown with response 'ok'
+2025-03-11 19:13:44.565675 -04:00 INFO (Orch) Console task shutdown with response 'ok'
+2025-03-11 19:13:44.565689 -04:00 INFO (Orch) Metric task shutdown with response 'ok'
+2025-03-11 19:13:44.565704 -04:00 INFO (Orch) Broadcast task shutdown with response 'ok'
+2025-03-11 19:13:44.565717 -04:00 INFO (Orch) Tasks shut down.

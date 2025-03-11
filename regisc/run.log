@@ -1,1 +1,2 @@
-Connecting to regisd...Unable to connect to regisd: 'No such file or directory (os error 2)'. Please ensure that it is loaded & running.
+2025-03-11 16:18:35.343778 -04:00 INFO Connecting to regisd...
+2025-03-11 16:18:35.344428 -04:00 INFO Regisc complete. Message sent.
