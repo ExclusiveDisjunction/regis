@@ -1,19 +1,19 @@
-pub mod connect;
-pub mod metric;
 pub mod config;
-pub mod orchestra;
+pub mod connect;
 pub mod locations;
 pub mod message;
+pub mod metric;
+pub mod orchestra;
 
+use common::log::{LoggerLevel, LoggerRedirect, logging};
+use common::{log_debug, log_info, log_warning};
 use config::CONFIG;
 use orchestra::Orchestrator;
-use common::log::{logging, LoggerLevel, LoggerRedirect};
-use common::{log_info, log_warning, log_debug};
 
 use std::process::ExitCode;
 
 #[tokio::main]
-async fn main() -> Result<(), ExitCode>{
+async fn main() -> Result<(), ExitCode> {
     // Start logger
 
     let level: LoggerLevel;
@@ -21,8 +21,7 @@ async fn main() -> Result<(), ExitCode>{
     if cfg!(debug_assertions) {
         level = LoggerLevel::Debug;
         redirect = LoggerRedirect::new(Some(LoggerLevel::Debug), true);
-    }
-    else {
+    } else {
         level = LoggerLevel::Info;
         redirect = LoggerRedirect::default();
     }
@@ -35,8 +34,11 @@ async fn main() -> Result<(), ExitCode>{
     log_info!("Launching regisd...");
 
     log_debug!("Loading configuration");
-    if let Err(e) =  CONFIG.open(locations::CONFIG_PATH) {
-        log_warning!("Unable to load configuration, creating default for this initalization. Error: '{:?}'", e);
+    if let Err(e) = CONFIG.open(locations::CONFIG_PATH) {
+        log_warning!(
+            "Unable to load configuration, creating default for this initalization. Error: '{:?}'",
+            e
+        );
         CONFIG.set_to_default();
     }
     log_info!("Configuration loaded.");

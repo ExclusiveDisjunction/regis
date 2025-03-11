@@ -1,20 +1,20 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
-use common::log_info;
-use tokio::net::{TcpStream, TcpSocket, TcpListener};
-use tokio::sync::mpsc::Receiver;
+use common::{log_error, log_info};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::select;
+use tokio::sync::mpsc::Receiver;
 
 use crate::locations::BROADCAST_PORT;
 use crate::message::{SimpleComm, WorkerTaskResult};
 
-pub async fn broad_entry(mut recv: Receiver<SimpleComm>) ->  WorkerTaskResult {
+pub async fn broad_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
     let mut active: Vec<(TcpStream, TcpSocket)> = Vec::new();
 
-    let addr = SocketAddr::from(( Ipv4Addr::new(0, 0, 0, 0), BROADCAST_PORT) );
-    let mut listener = match TcpListener::bind(addr).await {
+    let addr = SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), BROADCAST_PORT));
+    let listener = match TcpListener::bind(addr).await {
         Ok(v) => v,
-        Err(e) => return WorkerTaskResult::Sockets
+        Err(_) => return WorkerTaskResult::Sockets,
     };
 
     loop {
@@ -30,7 +30,7 @@ pub async fn broad_entry(mut recv: Receiver<SimpleComm>) ->  WorkerTaskResult {
 
                 log_info!("(Broadcast) Got connection from '{}'", &conn.1);
 
-                
+
             },
             m = recv.recv() => {
                 let m = match m {

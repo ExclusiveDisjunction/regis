@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 
 use crate::locations::{BROADCAST_PORT, CONSOLE_PORT, HOSTS_PORT};
 use common::config::{ConfigBase, ConfigurationProvider};
@@ -11,7 +11,7 @@ pub struct Configuration {
     pub console_port: u16,
     pub hosts_port: u16,
     pub broadcasts_port: u16,
-    pub metric_frec: u64
+    pub metric_frec: u64,
 }
 impl Default for Configuration {
     fn default() -> Self {
@@ -25,8 +25,8 @@ impl Default for Configuration {
         }
     }
 }
-impl ConfigBase for Configuration { }
-impl Configuration { }
+impl ConfigBase for Configuration {}
+impl Configuration {}
 
 lazy_static! {
     pub static ref CONFIG: ConfigurationProvider<Configuration> = ConfigurationProvider::default();

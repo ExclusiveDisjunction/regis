@@ -58,7 +58,8 @@ impl LoggerRedirect {
 
     pub fn handle_redirect(&self, write: &LoggerWrite) {
         if self.std_err && (write.level() == LoggerLevel::Error || write.level() == LoggerLevel::Critical) {
-            eprintln!("{}", write.contents())
+            eprintln!("{}", write.contents());
+            return;
         }
 
         if let Some(s) = self.std_out {

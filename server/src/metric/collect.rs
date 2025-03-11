@@ -1,4 +1,3 @@
-
 /*
     Metric collection
 
@@ -10,7 +9,8 @@
     Disk Usage
 */
 
-use std::{fmt::{Debug, Display}, process::Command};
+use std::fmt::{Debug, Display};
+use tokio::process::Command;
 
 use common::error::RangeError;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub enum StorageDenom {
     MiB = 2,
     GiB = 3,
     TiB = 4,
-    PiB = 5
+    PiB = 5,
 }
 impl Debug for StorageDenom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -36,7 +36,7 @@ impl Debug for StorageDenom {
                 Self::MiB => "MiB",
                 Self::GiB => "GiB",
                 Self::TiB => "TiB",
-                Self::PiB => "PiB"
+                Self::PiB => "PiB",
             }
         )
     }
@@ -52,7 +52,7 @@ impl Display for StorageDenom {
                 Self::MiB => "mebibyte",
                 Self::GiB => "gibibyte",
                 Self::TiB => "tebibyte",
-                Self::PiB => "pebibyte"
+                Self::PiB => "pebibyte",
             }
         )
     }
@@ -62,7 +62,7 @@ impl TryFrom<String> for StorageDenom {
     /// Attempts to parse from shorthand, looking for either _iB, _B, _ib, _b, _i, or just B, b
     fn try_from(value: String) -> Result<Self, Self::Error> {
         <Self as TryFrom<&str>>::try_from(&value)
-    }   
+    }
 }
 impl TryFrom<&str> for StorageDenom {
     type Error = ();
@@ -73,16 +73,16 @@ impl TryFrom<&str> for StorageDenom {
         if value == "b" {
             return Ok(Self::Byte);
         }
-        
+
         let prefix = match value.strip_suffix("ib") {
             Some(v) => v,
             None => match value.strip_suffix("b") {
                 Some(v) => v,
                 None => match value.strip_suffix("i") {
                     Some(v) => v,
-                    None => return Err(())
-                }
-            }
+                    None => return Err(()),
+                },
+            },
         };
 
         let result = match prefix {
@@ -91,11 +91,11 @@ impl TryFrom<&str> for StorageDenom {
             "g" => Self::GiB,
             "t" => Self::TiB,
             "p" => Self::PiB,
-            _ => return Err(())
+            _ => return Err(()),
         };
 
         Ok(result)
-    }   
+    }
 }
 impl StorageDenom {
     pub fn parse(mut num: u64) -> Self {
@@ -115,7 +115,7 @@ impl StorageDenom {
             2 => Self::MiB,
             3 => Self::GiB,
             4 => Self::TiB,
-            _ => Self::PiB
+            _ => Self::PiB,
         }
     }
 }
@@ -123,7 +123,7 @@ impl StorageDenom {
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct StorageNum {
     amount: f64,
-    bracket: StorageDenom
+    bracket: StorageDenom,
 }
 impl Debug for StorageNum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -134,18 +134,14 @@ impl Display for StorageNum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.amount == 1.0f64 {
             write!(f, "{} {}", self.amount, self.bracket)
-        }
-        else {
+        } else {
             write!(f, "{} {}s", self.amount, self.bracket)
         }
     }
 }
 impl StorageNum {
     pub fn new(amount: f64, bracket: StorageDenom) -> Self {
-        Self {
-            amount,
-            bracket
-        }
+        Self { amount, bracket }
     }
     pub fn parse(raw: u64) -> Self {
         let bracket = StorageDenom::parse(raw);
@@ -156,28 +152,21 @@ impl StorageNum {
 
         Self {
             amount: value,
-            bracket
+            bracket,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Utilization {
-    inner: u8
+    inner: u8,
 }
 impl Utilization {
     pub fn new(raw: u8) -> Result<Self, RangeError<u8>> {
         if raw > 100 {
-            Err(
-                RangeError::new("inner", raw, Some((0, 100)))
-            )
-        }
-        else {
-            Ok(
-                Self {
-                    inner: raw
-                }
-            )
+            Err(RangeError::new("inner", raw, Some((0, 100))))
+        } else {
+            Ok(Self { inner: raw })
         }
     }
     pub fn new_unwrap(raw: u8) -> Self {
@@ -185,9 +174,7 @@ impl Utilization {
             panic!("Index out of range. Utilization must be between 0-100")
         }
 
-        Self {
-            inner: raw
-        }
+        Self { inner: raw }
     }
 }
 impl Display for Utilization {
@@ -196,7 +183,7 @@ impl Display for Utilization {
     }
 }
 
-pub trait Metric: PartialEq + Debug + Clone + Serialize { }
+pub trait Metric: PartialEq + Debug + Clone + Serialize {}
 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
@@ -206,7 +193,7 @@ pub struct MemoryMetric {
     free: StorageNum,
     shared: Option<StorageNum>,
     buff: Option<StorageNum>,
-    available: Option<StorageNum>
+    available: Option<StorageNum>,
 }
 impl Metric for MemoryMetric {}
 
@@ -216,64 +203,106 @@ pub struct StorageMetric {
     mount: String,
     size: StorageNum,
     used: StorageNum,
-    capacity: Utilization
+    capacity: Utilization,
 }
 impl Metric for StorageMetric {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Snapshot<T> where T: Metric {
-    metrics: Vec<T>
+pub struct Snapshot<T>
+where
+    T: Metric,
+{
+    metrics: Vec<T>,
 }
-impl<T> PartialEq for Snapshot<T> where T: Metric {
+impl<T> PartialEq for Snapshot<T>
+where
+    T: Metric,
+{
     fn eq(&self, other: &Self) -> bool {
         self.metrics.eq(&other.metrics)
     }
 }
 impl<T> Metric for Snapshot<T> where T: Metric {}
-impl<T> Snapshot<T> where T: Metric {
+impl<T> Snapshot<T>
+where
+    T: Metric,
+{
     pub fn new(metrics: Vec<T>) -> Self {
-        Self {
-            metrics
-        }
+        Self { metrics }
     }
 }
 
 pub type MemorySnapshot = Snapshot<MemoryMetric>;
 pub type StorageSnapshot = Snapshot<StorageMetric>;
 
+pub fn remove_blanks<'a>(on: Vec<&'a str>) -> Vec<&'a str> {
+    let mut result: Vec<&'a str> = vec![];
+
+    for item in on {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        result.push(trimmed)
+    }
+
+    result
+}
+
 pub async fn collect_memory() -> Option<MemorySnapshot> {
     if cfg!(target_os = "linux") {
-        let output = Command::new("free")
-        .arg("-b")
-        .output()
-        .ok()?;
-        
+        let output = Command::new("free").arg("-b").output().await.ok()?;
+
         if !output.status.success() {
             return None;
         }
-        
+
         let raw = String::from_utf8_lossy(&output.stdout).to_string();
         let by_line: Vec<String> = raw.split("\n").map(String::from).collect();
-        
-        /* 
-            Output pattern
-            _        total    used  free   shared    buff    available 
-            [Name]: [total] [used] [free] [shared] [buff] [availiable]
-         */
+
+        /*
+           Output pattern
+           _        total    used  free   shared    buff    available
+           [Name]: [total] [used] [free] [shared] [buff] [availiable]
+        */
 
         if by_line.len() <= 1 {
             return None; //only the header was printed???
         }
 
         let mut list: Vec<MemoryMetric> = vec![];
-        for line in by_line {
-            let cols = line.split(" ");
-            todo!("Parse the {:?} cols list", cols);
+        for line in by_line.into_iter().skip(1) {
+            let cols = line.split(" ").collect();
+            let fixed = remove_blanks(cols);
+
+            //This is a greedy approach. It will attempt to fill as much as possible.
+            //The first four are required
+
+            if fixed.len() < 4 {
+                return None; //Invalid length
+            }
+
+            let mut iter = fixed.into_iter();
+            let name = iter.next()?;
+
+            let mut converted = iter
+                .map(|x| x.parse::<u64>().ok())
+                .map(|x| x.map(StorageNum::parse));
+
+            list.push(MemoryMetric {
+                name: name.to_string(),
+                total: converted.next()??,
+                used: converted.next()??,
+                free: converted.next()??,
+                shared: converted.next().unwrap_or(None),
+                buff: converted.next().unwrap_or(None),
+                available: converted.next().unwrap_or(None),
+            })
         }
 
         Some(MemorySnapshot::new(list))
-    }
-    else {
+    } else {
         None
     }
 }
@@ -291,7 +320,7 @@ mod test {
             (2u64.pow(30) + 100, StorageDenom::GiB),
             (2u64.pow(40), StorageDenom::TiB),
             (2u64.pow(50), StorageDenom::PiB),
-            (0, StorageDenom::Byte)
+            (0, StorageDenom::Byte),
         ];
 
         for (i, (raw, expected)) in values.into_iter().enumerate() {
@@ -313,7 +342,7 @@ mod test {
             (StorageNum::parse(2u64.pow(40)), "1 tebibyte", "1 TiB"),
             (StorageNum::parse(2u64.pow(40) * 2), "2 tebibytes", "2 TiB"),
             (StorageNum::parse(2u64.pow(50)), "1 pebibyte", "1 PiB"),
-            (StorageNum::parse(2u64.pow(50) * 2), "2 pebibytes", "2 PiB")
+            (StorageNum::parse(2u64.pow(50) * 2), "2 pebibytes", "2 PiB"),
         ];
 
         for (i, (num, long, short)) in values.into_iter().enumerate() {
@@ -328,22 +357,22 @@ mod test {
     #[test]
     fn denom_parsing() {
         let values = vec![
-            ( ["B", "b", "B", "b", "b"], StorageDenom::Byte ),
-            ( ["KiB", "KB", "kib", "kb", "ki"], StorageDenom::KiB ),
-            ( ["MiB", "MB", "mib", "mb", "mi"], StorageDenom::MiB ),
-            ( ["GiB", "GB", "gib", "gb", "gi"], StorageDenom::GiB ),
-            ( ["TiB", "TB", "tib", "tb", "ti"], StorageDenom::TiB ),
-            ( ["PiB", "PB", "pib", "pb", "pi"], StorageDenom::PiB ),
+            (["B", "b", "B", "b", "b"], StorageDenom::Byte),
+            (["KiB", "KB", "kib", "kb", "ki"], StorageDenom::KiB),
+            (["MiB", "MB", "mib", "mb", "mi"], StorageDenom::MiB),
+            (["GiB", "GB", "gib", "gb", "gi"], StorageDenom::GiB),
+            (["TiB", "TB", "tib", "tb", "ti"], StorageDenom::TiB),
+            (["PiB", "PB", "pib", "pb", "pi"], StorageDenom::PiB),
         ];
 
         let mut result = [[true; 5]; 6];
 
         for (i, (raw, expected)) in values.into_iter().enumerate() {
             let iter = raw
-            .into_iter()
-            .map(StorageDenom::try_from)
-            .map(|x| x == Ok(expected))
-            .enumerate();
+                .into_iter()
+                .map(StorageDenom::try_from)
+                .map(|x| x == Ok(expected))
+                .enumerate();
 
             for (j, v) in iter {
                 result[i][j] = v;

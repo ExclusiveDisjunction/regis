@@ -30,7 +30,7 @@ impl Display for SimpleComm {
             match self {
                 Self::Poll => "poll",
                 Self::Kill => "kill",
-                Self::ReloadConfiguration => "configuration reload"
+                Self::ReloadConfiguration => "configuration reload",
             }
         )
     }
@@ -47,7 +47,7 @@ pub enum ConsoleComm {
     /// A message to the ochestrator to shutdown all tasks.
     SystemShutdown,
     //// A message to the ochestrator to tell other tasks to reload configuration.
-    ReloadConfiguration
+    ReloadConfiguration,
 }
 impl KillMessage for ConsoleComm {
     fn kill() -> Self {
@@ -68,7 +68,7 @@ impl Display for ConsoleComm {
                 Self::Poll => "poll",
                 Self::Kill => "kill",
                 Self::SystemShutdown => "system shutdown",
-                Self::ReloadConfiguration => "configuration reload"
+                Self::ReloadConfiguration => "configuration reload",
             }
         )
     }
@@ -81,7 +81,7 @@ pub enum WorkerTaskResult {
     DoNotReboot,
     Sockets,
     Failure,
-    ImproperShutdown
+    ImproperShutdown,
 }
 impl Display for WorkerTaskResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -94,7 +94,7 @@ impl Display for WorkerTaskResult {
                 Self::DoNotReboot => "error, unable to reboot",
                 Self::Sockets => "sockets error",
                 Self::Failure => "general failure, rebootable",
-                Self::ImproperShutdown => "improper shutdown"
+                Self::ImproperShutdown => "improper shutdown",
             }
         )
     }

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt::Display, marker::PhantomData};
 
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender, error::SendError},
@@ -7,6 +7,8 @@ use tokio::{
         JoinHandle
     }
 };
+
+use crate::{log_info, log_warning, log_critical};
 
 /// A specific object that has a "kill" message value, such that if passed into a thread that listens to this message kind, it will stop executing.
 pub trait KillMessage : Send + Sized{
@@ -62,6 +64,47 @@ pub trait StartableTask: TaskBasis where Self: Sized {
                 *self = Self::start(func, buffer_size);
                 true
         }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestartStatus {
+    Ok,
+    WasDead,
+    TriesExceeded
+}
+impl Display for RestartStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Ok => "Ok",
+                Self::WasDead => "was dead",
+                Self::TriesExceeded => "restart tries exceeded"
+            }
+        )
+    }
+}
+impl RestartStatus {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok)
+    }
+    pub fn is_err(&self) -> bool {
+        !matches!(self, Self::Ok)
+    }
+    pub fn was_restarted(&self) -> bool {
+        matches!(self, Self::Ok | Self::WasDead)
+    }
+
+    pub fn log_event(&self, name: &str) -> bool {
+        match self {
+            Self::Ok => log_info!("Poll of thread '{}' was ok", name),
+            Self::WasDead => log_warning!("Poll of thread '{}' determined it was dead, but was successfully restarted.", name),
+            Self::TriesExceeded => log_critical!("Poll of thread '{}' determined it was dead, but cannot be restarted.", name)
+        }
+
+        self.was_restarted()
+    }
 }
 
 /// A wrapper around a task that can be restarted. It requires that the task is a `StartableTask`. It will keep track of how many times the task will be restarted.
@@ -132,11 +175,21 @@ impl<Task> RestartableTask<Task>
         }
 
         /// Performs a poll on the task. If the poll fails, it will restart the task according to `self.restart`.
-        pub async fn poll_and_restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
+        pub async fn poll_and_restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> RestartStatus where
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Task::Output> + Send + 'static,
              Task::Msg: PollableMessage {
-                poll(&mut self.task).await || self.restart(func, buffer_size)
+                if !poll(&mut self.task).await {
+                    if !self.restart(func, buffer_size) {
+                        RestartStatus::TriesExceeded
+                    }
+                    else {
+                        RestartStatus::WasDead
+                    }
+                }
+                else {
+                    RestartStatus::Ok
+                }
         }
 
         pub fn can_restart(&self) -> bool {
