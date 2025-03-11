@@ -2,8 +2,8 @@ use std::ops::DerefMut;
 use std::path::Path;
 
 use tokio::fs::File;
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::pin;
 
 pub const NET_BUFF_SIZE: usize = 4096;
 
@@ -15,17 +15,21 @@ pub async fn read_file_contents<P>(path: P) -> Result<String, std::io::Error> wh
     Ok(contents)
 }
 
-pub async fn send_buffer(src: &[u8], sock: &mut TcpStream) -> Result<(), std::io::Error> {
+pub async fn send_buffer<T>(src: &[u8], sock: &mut T) -> Result<(), std::io::Error> where T: AsyncWriteExt + Unpin {
     let mut total_written = 0;
+    pin!(sock);
     while total_written < src.len() {
-        total_written += sock.write(&src[total_written..]).await?;
+        let written = sock.write(&src[total_written..]).await?;
+        total_written += written;
     }
 
     Ok(())
 }
-pub async fn receive_buffer(dest: &mut Vec<u8>, sock: &mut TcpStream) -> Result<(), std::io::Error> {
+pub async fn receive_buffer<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result<(), std::io::Error> where T: AsyncReadExt + Unpin {
     dest.clear();
     let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
+
+    pin!(sock);
 
     loop {
         let bytes_read = sock.read(temp_buffer.deref_mut()).await?;

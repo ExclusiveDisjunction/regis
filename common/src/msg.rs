@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{to_string, from_str};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use std::{
     fmt::{
@@ -330,6 +330,24 @@ pub struct Acknoledgement {
 impl MessageBasis for Acknoledgement {} 
 impl ResponseMessage for Acknoledgement { }
 impl RequestMessage for Acknoledgement {}
+impl Acknoledgement {
+    pub fn new(code: HttpCode, message: Option<String>) -> Self {
+        Self {
+            code,
+            message
+        }
+    }
+
+    pub fn code(&self) -> HttpCode {
+        self.code
+    }
+    pub fn is_ok(&self) -> bool {
+        matches!(self.code, HttpCode::Ok)
+    }
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum RequestMessages {
@@ -345,18 +363,18 @@ pub enum ResponseMessages {
 impl MessageBasis for ResponseMessages { }
 impl RequestMessage for ResponseMessages { }
 
-pub async fn send_message<T>(message: T, sok: &mut TcpStream) -> Result<(), SendError> where T: MessageBasis {
+pub async fn send_message<T, S>(message: T, sok: &mut S) -> Result<(), SendError> where T: MessageBasis, S: AsyncWriteExt + Unpin {
     let serialized = to_string(&message).map_err(SendError::from)?;
     send_buffer(serialized.as_bytes(), sok).await.map_err(SendError::from)
 }
-pub async fn send_request<T>(message: T, sok: &mut TcpStream) -> Result<(), SendError>  where T: RequestMessage {
+pub async fn send_request<T, S>(message: T, sok: &mut S) -> Result<(), SendError>  where T: RequestMessage, S: AsyncWriteExt + Unpin {
     send_message(message, sok).await
 }
-pub async fn send_response<T>(message: T, soc: &mut TcpStream) -> Result<(), SendError> where T: ResponseMessage {
+pub async fn send_response<T, S>(message: T, soc: &mut S) -> Result<(), SendError> where T: ResponseMessage, S: AsyncWriteExt + Unpin {
     send_message(message, soc).await
 }
 
-pub async fn decode_message<T>(soc: &mut TcpStream) -> Result<T, DecodeError> where T: MessageBasis {
+pub async fn decode_message<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: MessageBasis, S: AsyncReadExt + Unpin {
     let mut contents: Vec<u8> = Vec::new();
     receive_buffer(&mut contents, soc).await.map_err(DecodeError::from)?;
 
@@ -365,9 +383,9 @@ pub async fn decode_message<T>(soc: &mut TcpStream) -> Result<T, DecodeError> wh
    
     result.map_err(DecodeError::from)
 }
-pub async fn decode_request<T>(soc: &mut TcpStream) -> Result<T, DecodeError> where T: RequestMessage {
+pub async fn decode_request<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: RequestMessage, S: AsyncReadExt + Unpin {
     decode_message(soc).await
 }
-pub async fn decode_response<T>(soc: &mut TcpStream) -> Result<T, DecodeError> where T: ResponseMessage {
+pub async fn decode_response<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: ResponseMessage, S: AsyncReadExt + Unpin {
     decode_message(soc).await
 }

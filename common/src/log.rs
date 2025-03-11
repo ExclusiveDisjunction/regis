@@ -72,24 +72,28 @@ impl LoggerRedirect {
 
 /// A single write-in-progress for the logger
 pub struct LoggerWrite {
+    time_stamp: String,
     contents: String,
     level: LoggerLevel
 }
 impl LoggerWrite {
-    pub fn blank(level: LoggerLevel) -> Self {
+    pub fn blank(level: LoggerLevel, time_stamp: String) -> Self {
         Self {
+            time_stamp,
             contents: String::new(),
             level
         }
     }
-    pub fn new<T: Debug>(contents: &T, level: LoggerLevel) -> Self {
+    pub fn new<T: Debug>(time_stamp: String, contents: &T, level: LoggerLevel) -> Self {
         Self {
+            time_stamp,
             contents: format!("{:?}", contents),
             level
         }
     }
-    pub fn new_str(contents: String, level: LoggerLevel) -> Self {
+    pub fn new_str(time_stamp: String, contents: String, level: LoggerLevel) -> Self {
         Self {
+            time_stamp,
             contents,
             level
         }
@@ -155,8 +159,9 @@ impl LoadedLogger {
             return Err( OperationError::new("start log", format!("log already started at level {:?}", self.writing_level().unwrap())) );
         }
 
-        let write = LoggerWrite::new(
-            &format!("{:?} {:?}", chrono::Local::now(), level),
+        let write = LoggerWrite::new_str(
+            format!("{:?} {:?}", chrono::Local::now(), level),
+            String::new(),
             level
         );
 
@@ -176,7 +181,7 @@ impl LoadedLogger {
         let write = self.write.as_ref().ok_or(IOError::Core( OperationError::new("end log", "no log was started").into() ))?;
 
         if !write.ignore(self.level) {
-            let mut contents = write.contents().to_string();
+            let mut contents = write.time_stamp.clone() + write.contents();
             contents.push('\n');
 
             self.redirect.handle_redirect(write);
@@ -191,7 +196,8 @@ impl LoadedLogger {
     /// Regardless of a log being currently in progress or not, this will direclty write a string into the log file. 
     pub fn write_direct(&mut self, contents: String, level: LoggerLevel) -> Result<(), std::io::Error> {
         let write = LoggerWrite::new_str(
-            format!("{:?} {:?} {}\n", chrono::Local::now(), level, contents),
+            format!("{:?} {:?}", chrono::Local::now(), level),
+            contents,
             level
         );
         self.redirect.handle_redirect(&write);
