@@ -1,5 +1,5 @@
 [package]
-name = "server-lib"
+name = "regisd_com"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,4 +7,3 @@ edition = "2024"
 common = { path="../common" }
 serde = {version = "1.0.218", features = ["derive"]}
 serde_json = "1.0.139"
-rusqlite = { version = "0.33.0", features = ["bundled"] }

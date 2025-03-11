@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 common = { path="../common"}
-server-lib = { path="../server-lib"}
+regisd_com = { path="../server-lib"}
 serde = {version = "1.0.218", features = ["derive"]}
 serde_json = "1.0.139"
 rusqlite = { version = "0.33.0", features = ["bundled"] }

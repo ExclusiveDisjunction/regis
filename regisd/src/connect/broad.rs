@@ -1,20 +1,41 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
-use common::{log_error, log_info};
-use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
 
-use crate::locations::BROADCAST_PORT;
+use crate::CONFIG;
 use crate::message::{SimpleComm, WorkerTaskResult};
 
-pub async fn broad_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
-    let mut active: Vec<(TcpStream, TcpSocket)> = Vec::new();
+use common::{log_error, log_info};
 
-    let addr = SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), BROADCAST_PORT));
+async fn setup_listener(addr: Ipv4Addr) -> Result<TcpListener, WorkerTaskResult> {
+    let port = match CONFIG.access().access() {
+        Some(v) => v.broadcasts_port,
+        None => {
+            log_error!("(Clients) Unable to retrive configuration. Exiting task.");
+            return Err(WorkerTaskResult::Configuration);
+        }
+    };
+
+    let addr = SocketAddr::from((addr, port));
     let listener = match TcpListener::bind(addr).await {
         Ok(v) => v,
-        Err(_) => return WorkerTaskResult::Sockets,
+        Err(e) => {
+            log_error!("(Clients) Unable to open the TCP listener '{e}', exiting task.");
+            return Err(WorkerTaskResult::Sockets);
+        }
+    };
+
+    Ok(listener)
+}
+
+pub async fn broad_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
+    let mut active: Vec<(TcpStream, SocketAddr)> = Vec::new();
+
+    let listener = match setup_listener(Ipv4Addr::new(0, 0, 0, 0)).await {
+        Ok(l) => l,
+        Err(e) => return e
     };
 
     loop {
@@ -30,7 +51,7 @@ pub async fn broad_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
 
                 log_info!("(Broadcast) Got connection from '{}'", &conn.1);
 
-
+                active.push(conn);
             },
             m = recv.recv() => {
                 let m = match m {
