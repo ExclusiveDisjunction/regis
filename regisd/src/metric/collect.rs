@@ -11,6 +11,7 @@
 
 use std::fmt::{Debug, Display};
 use tokio::process::Command;
+use std::process::Stdio;
 
 use common::error::RangeError;
 use serde::{Deserialize, Serialize};
@@ -194,25 +195,39 @@ pub trait Metric: PartialEq + Debug + Clone + Serialize {}
 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
-    name: String,
-    total: StorageNum,
-    used: StorageNum,
-    free: StorageNum,
-    shared: Option<StorageNum>,
-    buff: Option<StorageNum>,
-    available: Option<StorageNum>,
+    pub name: String,
+    pub total: StorageNum,
+    pub used: StorageNum,
+    pub free: StorageNum,
+    pub shared: Option<StorageNum>,
+    pub buff: Option<StorageNum>,
+    pub available: Option<StorageNum>,
 }
 impl Metric for MemoryMetric {}
 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct StorageMetric {
-    system: String,
-    mount: String,
-    size: StorageNum,
-    used: StorageNum,
-    capacity: Utilization,
+    pub system: String,
+    pub mount: String,
+    pub size: StorageNum,
+    pub used: StorageNum,
+    pub availiable: StorageNum,
+    pub capacity: Utilization,
 }
 impl Metric for StorageMetric {}
+
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct CpuMetric {
+    pub user: Utilization,
+    pub system: Utilization,
+    pub nice: Utilization,
+    pub idle: Utilization,
+    pub waiting: u16,
+    pub h_interupts: u16,
+    pub s_interupts: u16,
+    pub steal: u16
+}
+impl Metric for CpuMetric {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot<T>
@@ -312,6 +327,165 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
     } else {
         None
     }
+}
+
+pub async fn collect_storage() -> Option<StorageSnapshot> {
+    if !cfg!(target_os="linux") {
+        return None;
+    }
+
+    let output = Command::new("free")
+        .arg("-b")
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let by_line = raw.split("\n")
+        .skip(1) //Skip the header 
+        .filter(|x| !x.trim().is_empty()); //Skips empty lines
+
+    let mut result: Vec<StorageMetric> = vec![];
+    for line in by_line {
+        let mut splits: Vec<&str> = line.split(' ')
+            .filter(|x| !x.trim().is_empty())
+            .map(|x| x.trim())
+            .filter(|x| x.starts_with("/dev"))
+            .collect();
+
+        //Len should be 6
+
+        let 
+
+        let name = splits.next()?.to_owned();
+        let disk_stats: Vec<StorageNum> = splits.take(3)
+            .map(|x| {
+                match x.strip_suffix("K") {
+                    Some(v) => v,
+                    None => x
+                }
+            })
+            .map(|x| x.parse::<u64>().unwrap_or(0))
+            .map(StorageNum::parse)
+            .collect();
+        if disk_stats.len() != 3 {
+            return None;
+        }
+
+        let mut curr_iter = splits.skip(3);
+
+        let raw_capacity = curr_iter.next()?;
+        let capacity = Utilization::new(
+            raw_capacity.parse::<u8>().unwrap_or(0)
+        ).ok()?;
+
+        let mounted = curr_iter.next()?.to_owned();
+
+        result.push(
+            StorageMetric {
+                system: name,
+                mount: mounted,
+                size: disk_stats[0],
+                used: disk_stats[1],
+                availiable: disk_stats[2],
+                capacity,
+            }
+        )
+    }
+
+    todo!()
+}
+
+pub async fn collect_cpu() -> Option<CpuMetric> {
+    if !cfg!(target_os="linux") {
+        return None;
+    }
+
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("top -b -n 1 | grep \"%(Cpu(s)\"")
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+
+    let without_cpu = raw.strip_prefix("%Cpu(s): ")?;
+    let comma_splits: Vec<&str> = without_cpu.split(',')
+        .map(|x| x.trim())
+        .collect();
+    let reduced_comma = remove_blanks(comma_splits);
+
+    /*  
+        Format at this point: 
+        [Value] [suffix]
+
+        We need to remove the suffix. It always comes with a space after the value, so we can split by space, and only keep the first one.
+
+        There should be exaclty 8 arguments.
+     */
+    
+    let raw_values: Vec<&str> = reduced_comma.into_iter()
+        .map(|x| {
+            x.split(' ').next() //Only takes the first value, if it exists
+        })
+        .filter(|x| x.is_some()) //Only keep the real values
+        .map(|x| x.unwrap()) //Convert it from an option to a real value
+        .filter(|x| !x.trim().is_empty())
+        .collect(); //Remove the empty entries
+
+    let parsed_values: Vec<u16>= raw_values.into_iter()
+        .map(|x| x.parse::<f64>())
+        .map(|x| {
+            if let Ok(v) = x {
+                Some(v as u16)
+            }
+            else {
+                None
+            }
+        })
+        .filter(|x| x.is_some())
+        .map(|x| x.unwrap())
+        .collect();
+
+    if parsed_values.len() != 8 {
+        return None;
+    }
+
+    //The first four are supposed to be utiliziations, the remainder are to be interpreted as u16 durations.
+
+    let utils: Vec<Utilization> = parsed_values.iter()
+        .take(4)
+        .map(|x| *x as u8)
+        .map(Utilization::new)
+        .filter(|x| x.is_ok())
+        .map(|x| x.unwrap())
+        .collect();
+
+    if utils.len() != 4 {
+        return None;
+    }
+
+    Some(
+        CpuMetric {
+            user: utils[0],
+            system: utils[1],
+            nice: utils[2],
+            idle: utils[3],
+            waiting: parsed_values[4],
+            h_interupts: parsed_values[5],
+            s_interupts: parsed_values[6],
+            steal: parsed_values[7],
+        }
+    )
 }
 
 #[cfg(test)]
