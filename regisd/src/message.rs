@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use common::task_util::{KillMessage, PollableMessage};
+use regisd_com::msg::ConsoleRequests;
 
 /// A representation of communication between the `Orchestrator` and the client worker tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +44,8 @@ pub enum ConsoleComm {
     Poll,
     /// A command to tell that task to stop executing.
     Kill,
+    /// A command to tell the console to approve the authentications that are pending.
+    Auth,
 
     /// A message to the ochestrator to shutdown all tasks.
     SystemShutdown,
@@ -59,6 +62,15 @@ impl PollableMessage for ConsoleComm {
         Self::Poll
     }
 }
+impl From<ConsoleRequests> for ConsoleComm {
+    fn from(value: ConsoleRequests) -> Self {
+        match value {
+            ConsoleRequests::Auth => Self::Auth,
+            ConsoleRequests::Config => Self::ReloadConfiguration,
+            ConsoleRequests::Shutdown => Self::SystemShutdown
+        }
+    }
+}
 impl Display for ConsoleComm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -69,11 +81,13 @@ impl Display for ConsoleComm {
                 Self::Kill => "kill",
                 Self::SystemShutdown => "system shutdown",
                 Self::ReloadConfiguration => "configuration reload",
+                Self::Auth => "authentication approved"
             }
         )
     }
 }
 
+/// A simple enum that shows some common reasons why worker threads of the Orch would fail.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum WorkerTaskResult {
     Ok,

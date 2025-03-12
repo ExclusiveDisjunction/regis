@@ -16,3 +16,5 @@ rusqlite = { version = "0.33.0", features = ["bundled"] }
 tokio = { version = "1", features = ["full"] }
 lazy_static = "1.5.0"
 chrono = "0.4.40"
+clap = { version = "4.5.32", features = ["derive"] }
+daemonize = "0.5.0"

@@ -7,7 +7,7 @@ use tokio::{
     }
 };
 
-use crate::{log_debug, log_warning, log_critical};
+use crate::{log_debug, log_warning, log_error, log_critical};
 
 /// A specific object that has a "kill" message value, such that if passed into a thread that listens to this message kind, it will stop executing.
 pub trait KillMessage : Send + Sized{
@@ -16,6 +16,55 @@ pub trait KillMessage : Send + Sized{
 /// A specific object that has a "poll"  message value, such that if passed into a thread that listens to this message kind, it will ignore it. 
 pub trait PollableMessage : Send + Sized {
     fn poll() -> Self;
+}
+
+/// Representation of the success/failures of restarting a task.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestartStatus {
+    Ok,
+    WasDead,
+    TriesExceeded,
+    Argument
+}
+impl Display for RestartStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Ok => "Ok",
+                Self::WasDead => "was dead",
+                Self::TriesExceeded => "restart tries exceeded",
+                Self::Argument => "invalid argument passed"
+            }
+        )
+    }
+}
+impl RestartStatus {
+    /// Determines if the status is the ok variant. 
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok)
+    }
+    /// Determines if the status is an error variant.
+    pub fn is_err(&self) -> bool {
+        !matches!(self, Self::Ok)
+    }
+    /// Determines if the thread was restarted (warning value)
+    pub fn was_restarted(&self) -> bool {
+        matches!(self, Self::Ok | Self::WasDead)
+    }
+
+    /// Writes to the logger depending on the result of the poll. Note that 'Ok' values are only printed in debug mode.
+    pub fn log_event(&self, name: &str) -> bool {
+        match self {
+            Self::Ok => log_debug!("Poll of thread '{}' was ok", name),
+            Self::WasDead => log_warning!("Poll of thread '{}' determined it was dead, but was successfully restarted.", name),
+            Self::TriesExceeded => log_critical!("Poll of thread '{}' determined it was dead, but cannot be restarted.", name),
+            Self::Argument => log_error!("Poll of thread '{}' determined that an argument passed into it was invalid, and could not be restarted.", name)
+        }
+
+        self.was_restarted()
+    }
 }
 
 /// An abstraction over communication channel(s) and a join handle. It handles the spawning and resulting of different async tasks.
@@ -50,60 +99,24 @@ pub trait StartableTask: TaskBasis where Self: Sized {
             F: FnOnce(Self::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Self::Output> + Send + 'static;
 
-        /// Resets the internal state of the object if the task is to be deleted.
-        /// Fails if the task is still running.
-        fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
+        /// Attempts to restart the current task.
+        /// If the `buffer_size` is zero, it will return `RestartStatus::Argument`.
+        /// Otherwise, it will restart the task, if it was dead. If it was dead, this will return `RestartStatus::WasDead`, otherwise, `RestartStatus::Ok`.
+        fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> RestartStatus where
             Self: Sized,
             F: FnOnce(Self::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Self::Output> + Send + 'static {
                 if self.is_running() {
-                    return false;
+                    RestartStatus::Ok
                 }
-
-                *self = Self::start(func, buffer_size);
-                true
+                else if buffer_size == 0 {
+                    RestartStatus::Argument
+                }
+                else {
+                    *self = Self::start(func, buffer_size);
+                    RestartStatus::WasDead
+                }
         }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RestartStatus {
-    Ok,
-    WasDead,
-    TriesExceeded
-}
-impl Display for RestartStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Ok => "Ok",
-                Self::WasDead => "was dead",
-                Self::TriesExceeded => "restart tries exceeded"
-            }
-        )
-    }
-}
-impl RestartStatus {
-    pub fn is_ok(&self) -> bool {
-        matches!(self, Self::Ok)
-    }
-    pub fn is_err(&self) -> bool {
-        !matches!(self, Self::Ok)
-    }
-    pub fn was_restarted(&self) -> bool {
-        matches!(self, Self::Ok | Self::WasDead)
-    }
-
-    pub fn log_event(&self, name: &str) -> bool {
-        match self {
-            Self::Ok => log_debug!("Poll of thread '{}' was ok", name),
-            Self::WasDead => log_warning!("Poll of thread '{}' determined it was dead, but was successfully restarted.", name),
-            Self::TriesExceeded => log_critical!("Poll of thread '{}' determined it was dead, but cannot be restarted.", name)
-        }
-
-        self.was_restarted()
-    }
 }
 
 /// A wrapper around a task that can be restarted. It requires that the task is a `StartableTask`. It will keep track of how many times the task will be restarted.
@@ -159,18 +172,19 @@ impl<Task> RestartableTask<Task>
                 }
         }
 
-        /// Restarts the current task, but if the tries are exceeded, it will return false.
-        pub fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> bool where
+        /// Attempts to restart the current task.
+        /// If the `buffer_size` is zero, it will return `RestartStatus::Argument`.
+        /// If the amount of restarts is greater than or requal to the `max_restart`, it will return `RestartStatus::TriesExceeded`
+        /// Otherwise, it will restart the task, if it was dead. If it was dead, this will return `RestartStatus::WasDead`, otherwise, `RestartStatus::Ok`.
+        pub fn restart<F, Fut>(&mut self, func: F, buffer_size: usize) -> RestartStatus where
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Task::Output> + Send + 'static {
-                if buffer_size == usize::MAX || self.restart_count + 1 == self.max_restart {
-                    return false;
+                if self.restart_count + 1 == self.max_restart {
+                    RestartStatus::TriesExceeded
                 }
-
-                self.restart_count += 1;
-                self.task.restart(func, buffer_size);
-
-                true
+                else {
+                    self.task.restart(func, buffer_size)
+                }
         }
 
         /// Performs a poll on the task. If the poll fails, it will restart the task according to `self.restart`.
@@ -178,13 +192,9 @@ impl<Task> RestartableTask<Task>
             F: FnOnce(Task::Arg) -> Fut + Send + 'static,
             Fut: Future<Output = Task::Output> + Send + 'static,
              Task::Msg: PollableMessage {
+
                 if !poll(&mut self.task).await {
-                    if !self.restart(func, buffer_size) {
-                        RestartStatus::TriesExceeded
-                    }
-                    else {
-                        RestartStatus::WasDead
-                    }
+                    self.restart(func, buffer_size)
                 }
                 else {
                     RestartStatus::Ok
@@ -232,8 +242,28 @@ pub async fn shutdown_explicit<Task>(handle: Task,  signal: Task::Msg) -> Result
     else {
         Ok(None)
     }
+}
+/// Calls `shutdown` on multiple tasks, returning the results of each joined handle.
+pub async fn shutdown_tasks<T>(tasks: Vec<T>) -> Vec<Result<Option<T::Output>, JoinError>> where T: TaskBasis, T::Msg: KillMessage {
+    let mut result = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        result.push(
+            shutdown(task).await
+        )
+    }
 
-    
+    result
+}
+/// Calls `shutdown_explicit` on multiple tasks, returning the results of each joined handle.
+pub async fn shutdown_tasks_explicit<T>(tasks: Vec<T>, signal: T::Msg) -> Vec<Result<Option<T::Output>, JoinError>> where T: TaskBasis, T::Msg: Clone{
+    let mut result = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        result.push(
+            shutdown_explicit(task, signal.clone()).await
+        )
+    }
+
+    result
 }
 
 /// Sends a message to the task.

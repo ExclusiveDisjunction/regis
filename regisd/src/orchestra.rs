@@ -21,7 +21,7 @@ use common::{
 };
 
 /// The amount of time between each task "poll".
-pub const TASK_CHECK_TIMEOUT: u64 = 10;
+pub const TASK_CHECK_TIMEOUT: u64 = 30;
 /// The buffer size for a default channel buffer.
 pub const TASKS_DEFAULT_BUFFER: usize = 10;
 
@@ -114,7 +114,7 @@ impl Orchestrator {
                     }
                     else {
                         log_info!("(Orch) Console thread unexpectedly closed. Attempting to restart...");
-                        if !self.console_thread.restart(console_entry, TASKS_DEFAULT_BUFFER) {
+                        if self.console_thread.restart(console_entry, TASKS_DEFAULT_BUFFER).is_err() {
                             log_critical!("Unable to restart console thread. Shutting down tasks...");
                             break;
                         }

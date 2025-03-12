@@ -24,23 +24,17 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Allow any authentication requests that the server currently has
+    /// Instruct the daemon to approve authentication requests
     Auth,
     /// Instruct the daemon to gracefully shutdown
     Shutdown,
-    /// Tell the daemon to reload its configuration file
+    /// Instruct the daemon to reload its configuration file
     Config
 }
 
 pub async fn entry() {
     // Parse command
-    let command = match Cli::try_parse() {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("Invalid command usage. Please type regisc --help for explinations.");
-            exit(2);
-        }
-    };
+    let command = Cli::parse();
 
     // Establish logger
     let level: LoggerLevel;

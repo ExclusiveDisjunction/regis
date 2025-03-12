@@ -155,6 +155,13 @@ impl StorageNum {
             bracket,
         }
     }
+
+    pub fn in_bytes(self) -> u64 {
+        let power = 2u64.pow(10 * (self.bracket as u32)) as f64;
+        let product = self.amount * power;
+
+        product as u64
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

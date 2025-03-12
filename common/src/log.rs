@@ -128,6 +128,7 @@ pub struct LoadedLogger {
     write: Option<LoggerWrite>
 }
 impl LoadedLogger {
+    /// Initalizes the structure.
     pub fn new(file: File, level: LoggerLevel, redirect: LoggerRedirect) -> Self {
         Self {
             file,
@@ -137,35 +138,43 @@ impl LoadedLogger {
         }
     }
 
+    /// Determines the level at which the logger is operating.
     pub fn level(&self) -> LoggerLevel {
         self.level
     }
+    /// Determines the logger's redirect.
     pub fn redirect(&self) -> &LoggerRedirect {
         &self.redirect
     }
+    /// Sets the logger's redirect.
     pub fn set_redirect(&mut self, new: LoggerRedirect) {
         self.redirect = new
     }
 
+    /// Determines if the logger is currently writing a log value.
     pub fn is_writing(&self) -> bool {
         self.write.is_some()
     }
+    /// Determines the level at which the current log is being written in.
     pub fn writing_level(&self) -> Option<LoggerLevel> {
         let write = self.write.as_ref()?;
         Some(write.level())
     }
+    /// Determines if the current log, if being written, will actually be written to the file.
     pub fn current_log_ignored(&self) -> Option<bool> {
         let write = self.write.as_ref()?;
         Some( write.level() < self.level )
     }
 
+    /// Prepares the logger for a new writing session.
+    /// Fails if there is currently a log ongoing.
     pub fn start_log(&mut self, level: LoggerLevel) -> Result<(), OperationError>{
         if self.is_writing() {
             return Err( OperationError::new("start log", format!("log already started at level {:?}", self.writing_level().unwrap())) );
         }
 
         let write = LoggerWrite::new_str(
-            format!("{:?} {:?}", chrono::Local::now(), level),
+            format!("{}", chrono::Local::now()),
             String::new(),
             level
         );
@@ -173,6 +182,7 @@ impl LoadedLogger {
         self.write = Some(write);
         Ok(())
     }
+    /// Writes data into the current log, if one is active.
     pub fn write<T: Debug>(&mut self, obj: &T) -> bool {
         let write = match self.write.as_mut() {
             Some(s) => s,
@@ -182,6 +192,7 @@ impl LoadedLogger {
         write.append(obj);
         true
     }
+    /// Flushes the internal buffer of the log, and marks the logger as being completed.
     pub fn end_log(&mut self) -> Result<(), IOError> {
         let write = self.write.as_ref().ok_or(IOError::Core( OperationError::new("end log", "no log was started").into() ))?;
 
@@ -312,6 +323,16 @@ lazy_static! {
     pub static ref logging: Logger = Logger::default();
 }
 
+/// A macro that allows for shorthand with logger writting. The callee must sepecify the level as `LoggerLevel`, and the message.
+/// # Example
+/// ```
+/// logger_write!(LoggerLevel::Info, "this is an info log holding value {}", 3);
+/// // Which is the same as:
+/// logger.access()?.access()?.write_direct(format!("this is an info log holding value {}", 3), LoggerLevel::Info);
+/// ```
+/// 
+/// Note that this macro will report errors, as they happen. However, if the logger is not open (`logger.is_open() == false`), it will do nothing. 
+/// This macro will evaluate the arguments *before* aquiring the lock to the logger. This is to prevent deadlocks, where an argument calls something with the logger.
 #[macro_export]
 macro_rules! logger_write {
     ($level: expr, $($arg:tt)*) => {
@@ -342,6 +363,7 @@ macro_rules! logger_write {
         }
     };
 }
+/// Writes to the logger with `LoggerLevel::Debug`. Equivalent to `logger_write!(LoggerLevel::Debug, _)`
 #[macro_export]
 macro_rules! log_debug {
     ($($arg:tt)*) => {
@@ -351,6 +373,7 @@ macro_rules! log_debug {
         }
     }
 }
+/// Writes to the logger with `LoggerLevel::Info`. Equivalent to `logger_write!(LoggerLevel::Info, _)`
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
@@ -360,6 +383,7 @@ macro_rules! log_info {
         }
     }
 }
+/// Writes to the logger with `LoggerLevel::Warning`. Equivalent to `logger_write!(LoggerLevel::Warning, _)`
 #[macro_export]
 macro_rules! log_warning {
     ($($arg:tt)*) => {
@@ -369,6 +393,7 @@ macro_rules! log_warning {
         }
     }
 }
+/// Writes to the logger with `LoggerLevel::Error`. Equivalent to `logger_write!(LoggerLevel::Error, _)`
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
@@ -378,6 +403,7 @@ macro_rules! log_error {
         }
     }
 }
+/// Writes to the logger with `LoggerLevel::Critical`. Equivalent to `logger_write!(LoggerLevel::Critical, _)`
 #[macro_export]
 macro_rules! log_critical {
     ($($arg:tt)*) => {
