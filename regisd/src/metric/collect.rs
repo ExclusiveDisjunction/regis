@@ -11,7 +11,6 @@
 
 use std::fmt::{Debug, Display};
 use tokio::process::Command;
-use std::process::Stdio;
 
 use common::error::RangeError;
 use serde::{Deserialize, Serialize};
@@ -191,7 +190,32 @@ impl Display for Utilization {
     }
 }
 
-pub trait Metric: PartialEq + Debug + Clone + Serialize {}
+pub trait Metric: PartialEq + Debug + Clone + Serialize { }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Snapshot<T>
+where
+    T: Metric,
+{
+    metrics: Vec<T>,
+}
+impl<T> PartialEq for Snapshot<T>
+where
+    T: Metric,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.metrics.eq(&other.metrics)
+    }
+}
+impl<T> Metric for Snapshot<T> where T: Metric {}
+impl<T> Snapshot<T>
+where
+    T: Metric,
+{
+    pub fn new(metrics: Vec<T>) -> Self {
+        Self { metrics }
+    }
+}
 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
@@ -229,33 +253,47 @@ pub struct CpuMetric {
 }
 impl Metric for CpuMetric {}
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Snapshot<T>
-where
-    T: Metric,
-{
-    metrics: Vec<T>,
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct ProcessCount {
+    pub count: u64
 }
-impl<T> PartialEq for Snapshot<T>
-where
-    T: Metric,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.metrics.eq(&other.metrics)
-    }
+impl Metric for ProcessCount {}
+
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkMetricSection {
+    pub ok: u64,
+    pub err: u64,
+    pub drop: u64,
+    pub overrun: u64
 }
-impl<T> Metric for Snapshot<T> where T: Metric {}
-impl<T> Snapshot<T>
-where
-    T: Metric,
-{
-    pub fn new(metrics: Vec<T>) -> Self {
-        Self { metrics }
+impl TryFrom<Vec<u64>> for NetworkMetricSection {
+    type Error = ();
+    fn try_from(value: Vec<u64>) -> Result<Self, Self::Error> {
+        let mut iter = value.into_iter();
+        Ok(
+            Self {
+                ok: iter.next().ok_or(())?,
+                err: iter.next().ok_or(())?,
+                drop: iter.next().ok_or(())?,
+                overrun: iter.next().ok_or(())?
+            }
+        )
     }
 }
 
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkMetric {
+    pub name: String,
+    pub mtu: String,
+    pub rx: NetworkMetricSection,
+    pub tx: NetworkMetricSection
+}
+
+impl Metric for NetworkMetric { }
+
 pub type MemorySnapshot = Snapshot<MemoryMetric>;
 pub type StorageSnapshot = Snapshot<StorageMetric>;
+pub type NetworkSnapshot = Snapshot<NetworkMetric>;
 
 pub fn remove_blanks<'a>(on: Vec<&'a str>) -> Vec<&'a str> {
     let mut result: Vec<&'a str> = vec![];
@@ -334,8 +372,8 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
         return None;
     }
 
-    let output = Command::new("free")
-        .arg("-b")
+    let output = Command::new("df")
+        .arg("-BK")
         .output()
         .await
         .ok()?;
@@ -351,39 +389,32 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
 
     let mut result: Vec<StorageMetric> = vec![];
     for line in by_line {
-        let mut splits: Vec<&str> = line.split(' ')
+        let splits: Vec<&str> = line.split(' ')
             .filter(|x| !x.trim().is_empty())
             .map(|x| x.trim())
             .filter(|x| x.starts_with("/dev"))
             .collect();
 
         //Len should be 6
-
-        let 
-
-        let name = splits.next()?.to_owned();
-        let disk_stats: Vec<StorageNum> = splits.take(3)
-            .map(|x| {
-                match x.strip_suffix("K") {
-                    Some(v) => v,
-                    None => x
-                }
-            })
-            .map(|x| x.parse::<u64>().unwrap_or(0))
-            .map(StorageNum::parse)
-            .collect();
-        if disk_stats.len() != 3 {
-            return None;
+        if splits.len() != 6 {
+            continue;
         }
 
-        let mut curr_iter = splits.skip(3);
+        let name = splits[0].to_owned();
+        let disk_stats: Vec<StorageNum> = splits[1..3]
+            .iter()
+            .map(|x| {
+                let raw = match x.strip_suffix("K") {
+                    Some(v) => v,
+                    None => x
+                };
 
-        let raw_capacity = curr_iter.next()?;
-        let capacity = Utilization::new(
-            raw_capacity.parse::<u8>().unwrap_or(0)
-        ).ok()?;
-
-        let mounted = curr_iter.next()?.to_owned();
+                let parsed: u64 = raw.parse().unwrap_or(0);
+                StorageNum::parse(parsed)
+            })
+            .collect();
+        let capacity = Utilization::new(splits[4].parse::<u8>().unwrap_or(0)).ok()?;
+        let mounted = splits[5].to_owned();
 
         result.push(
             StorageMetric {
@@ -462,8 +493,8 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
 
     //The first four are supposed to be utiliziations, the remainder are to be interpreted as u16 durations.
 
-    let utils: Vec<Utilization> = parsed_values.iter()
-        .take(4)
+    let utils: Vec<Utilization> = parsed_values[0..3]
+        .iter()
         .map(|x| *x as u8)
         .map(Utilization::new)
         .filter(|x| x.is_ok())
@@ -484,6 +515,105 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
             h_interupts: parsed_values[5],
             s_interupts: parsed_values[6],
             steal: parsed_values[7],
+        }
+    )
+}
+
+pub async fn collect_network() -> Option<NetworkSnapshot> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+
+    let output = Command::new("netstat")
+        .arg("-i")
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    /*
+
+        The format is: 
+
+        -Ignore Row-
+        -Ignore Row-
+        [Name] [Mtu] [RX..4] [TX..4] -Ignore-
+     */
+
+    let by_line: Vec<&str> = raw.split('\n')
+        .skip(2) //Skip the headers
+        .map(|x| x.trim())
+        .filter(|x| !x.is_empty())
+        .collect();
+
+    let mut result: Vec<NetworkMetric> = vec![];
+    for line in by_line {
+        let splits: Vec<&str> = line.split(' ')
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .collect();
+
+        if splits.len() != 11 {
+            continue;
+        }
+
+        let name = splits[0].to_owned();
+        let mtu = splits[1].to_owned();
+        let rx_raw: Vec<&str> = splits[2..5].to_vec();
+        let tx_raw: Vec<&str> = splits[6..9].to_vec();
+        //The flag `splits[10]` is ignored
+
+        let rx_values: Vec<u64> = rx_raw.into_iter()
+            .map(|x| x.parse::<u64>().unwrap_or(0))
+            .collect();
+        let tx_values: Vec<u64> = tx_raw.into_iter()
+            .map(|x| x.parse::<u64>().unwrap_or(0))
+            .collect();
+
+        let rx = NetworkMetricSection::try_from(rx_values).ok()?;
+        let tx = NetworkMetricSection::try_from(tx_values).ok()?;
+
+        result.push(
+            NetworkMetric {
+                name,
+                mtu,
+                rx,
+                tx
+            }
+        )
+    }   
+
+    Some(
+        NetworkSnapshot::new(result)
+    )
+}
+
+pub async fn collect_process_count() -> Option<ProcessCount> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("ps -e --no-headers | wc -l")
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let amount: u64 = raw.parse().ok()?;
+
+    Some(
+        ProcessCount {
+            count: amount
         }
     )
 }
