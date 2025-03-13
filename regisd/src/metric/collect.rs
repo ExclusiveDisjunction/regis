@@ -192,12 +192,13 @@ impl Display for Utilization {
 
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
 
+/// Represents a collection of metrics that are taken at the same time.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot<T>
 where
     T: Metric,
 {
-    metrics: Vec<T>,
+    pub metrics: Vec<T>,
 }
 impl<T> PartialEq for Snapshot<T>
 where
@@ -217,6 +218,7 @@ where
     }
 }
 
+/// Stores the information about a specific memory section. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
     pub name: String,
@@ -229,6 +231,7 @@ pub struct MemoryMetric {
 }
 impl Metric for MemoryMetric {}
 
+/// Stores the information about a specific storage section.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct StorageMetric {
     pub system: String,
@@ -240,34 +243,51 @@ pub struct StorageMetric {
 }
 impl Metric for StorageMetric {}
 
+/// Stores the information about CPU utilization
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct CpuMetric {
+    /// How much of the processor is used for user processes
     pub user: Utilization,
+    /// How much of the processor is used for system processes
     pub system: Utilization,
+    /// How much of the processor is used for elevated processes
     pub nice: Utilization,
+    /// How much of the processor is being unused.
     pub idle: Utilization,
+    /// The time the processor spends waiting for IO
     pub waiting: u16,
+    /// The time the processor spends handling hardware interupts
     pub h_interupts: u16,
+    /// The time the processor spends handling software interupts
     pub s_interupts: u16,
+    /// The time the processor spends handling virtual environments 
     pub steal: u16
 }
 impl Metric for CpuMetric {}
 
+/// Stores information about how many processes are running.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessCount {
+    /// The number of running processes
     pub count: u64
 }
 impl Metric for ProcessCount {}
 
+/// Stores the information for either the receive or transmitting section of the network. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMetricSection {
+    /// How mahy packets were OK
     pub ok: u64,
+    /// How many packets had errors
     pub err: u64,
+    /// How many packets were dropped
     pub drop: u64,
+    /// How many packets were queued
     pub overrun: u64
 }
 impl TryFrom<Vec<u64>> for NetworkMetricSection {
     type Error = ();
+    /// Attempts to build this structure from raw values. It returns error if there is not at least 4 elements. 
     fn try_from(value: Vec<u64>) -> Result<Self, Self::Error> {
         let mut iter = value.into_iter();
         Ok(
@@ -281,34 +301,32 @@ impl TryFrom<Vec<u64>> for NetworkMetricSection {
     }
 }
 
+/// Represents a snapshot of network activity through one specific link.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMetric {
+    /// The name of the link
     pub name: String,
+    /// MTU value
     pub mtu: String,
+    /// The receiving information
     pub rx: NetworkMetricSection,
+    /// The sending information 
     pub tx: NetworkMetricSection
 }
-
 impl Metric for NetworkMetric { }
+
+pub struct CollectedMetrics {
+    pub time: i64,
+    pub memory: Option<MemorySnapshot>,
+    pub storage: Option<StorageSnapshot>,
+    pub cpu: Option<CpuMetric>,
+    pub network: Option<NetworkSnapshot>,
+    pub proc_count: Option<ProcessCount>
+}
 
 pub type MemorySnapshot = Snapshot<MemoryMetric>;
 pub type StorageSnapshot = Snapshot<StorageMetric>;
 pub type NetworkSnapshot = Snapshot<NetworkMetric>;
-
-pub fn remove_blanks<'a>(on: Vec<&'a str>) -> Vec<&'a str> {
-    let mut result: Vec<&'a str> = vec![];
-
-    for item in on {
-        let trimmed = item.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        result.push(trimmed)
-    }
-
-    result
-}
 
 pub async fn collect_memory() -> Option<MemorySnapshot> {
     if cfg!(target_os = "linux") {
@@ -319,7 +337,11 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
         }
 
         let raw = String::from_utf8_lossy(&output.stdout).to_string();
-        let by_line: Vec<String> = raw.split("\n").map(String::from).collect();
+        let by_line: Vec<&str> = raw.split("\n")
+            .skip(1) //Skip the header
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .collect();
 
         /*
            Output pattern
@@ -332,18 +354,20 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
         }
 
         let mut list: Vec<MemoryMetric> = vec![];
-        for line in by_line.into_iter().skip(1) {
-            let cols = line.split(" ").collect();
-            let fixed = remove_blanks(cols);
+        for line in by_line{
+            let cols: Vec<&str> = line.split(" ")
+                .map(|x| x.trim())
+                .filter(|x| !x.is_empty())
+                .collect();
 
             //This is a greedy approach. It will attempt to fill as much as possible.
             //The first four are required
 
-            if fixed.len() < 4 {
+            if cols.len() < 4 {
                 return None; //Invalid length
             }
 
-            let mut iter = fixed.into_iter();
+            let mut iter = cols.into_iter();
             let name = iter.next()?;
 
             let mut converted = iter
@@ -452,8 +476,8 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
     let without_cpu = raw.strip_prefix("%Cpu(s): ")?;
     let comma_splits: Vec<&str> = without_cpu.split(',')
         .map(|x| x.trim())
+        .filter(|x| !x.is_empty())
         .collect();
-    let reduced_comma = remove_blanks(comma_splits);
 
     /*  
         Format at this point: 
@@ -464,7 +488,7 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
         There should be exaclty 8 arguments.
      */
     
-    let raw_values: Vec<&str> = reduced_comma.into_iter()
+    let raw_values: Vec<&str> = comma_splits.into_iter()
         .map(|x| {
             x.split(' ').next() //Only takes the first value, if it exists
         })
@@ -616,6 +640,19 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
             count: amount
         }
     )
+}
+
+pub async fn collect_all_snapshots() -> CollectedMetrics {
+    let time = chrono::Local::now().timestamp();
+
+    CollectedMetrics {
+        time,
+        memory: collect_memory().await,
+        storage: collect_storage().await,
+        cpu: collect_cpu().await,
+        network: collect_network().await,
+        proc_count: collect_process_count().await
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 pub mod collect;
 pub mod io;
+pub mod storage;
 
 use common::log_info;
 use tokio::select;
