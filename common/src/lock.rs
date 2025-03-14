@@ -3,6 +3,8 @@ use super::error::PoisonError;
 use std::sync::{MutexGuard as StdMutexGuard, RwLockReadGuard, RwLockWriteGuard, Arc, RwLock, Mutex};
 use std::fmt::{Debug, Display};
 
+// Room for improvement: Include traits that allow for access and access_error, is_ok, is_err, take_err, take_lock are all provided.
+
 /// An abstraction over the direct result of RwLock<T>::read(), for simplicity.
 pub struct ReadGuard<'a, T> {
     inner: Result<RwLockReadGuard<'a, T>, PoisonError>
@@ -80,6 +82,13 @@ impl<'a, T> ReadGuard<'a, T> {
         self.inner.as_deref()
     }
 
+    pub fn is_ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+    pub fn is_err(&self) -> bool {
+        self.inner.is_err()
+    }
+
     pub fn take_err(self) -> Option<PoisonError> {
         self.inner.err()
     }
@@ -128,6 +137,13 @@ impl<'a, T> WriteGuard<'a, T> {
     }
     pub fn as_deref(&mut self) -> Result<&mut T, &mut PoisonError> {
         self.inner.as_deref_mut()
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+    pub fn is_err(&self) -> bool {
+        self.inner.is_err()
     }
 
     pub fn take_err(self) -> Option<PoisonError> {
@@ -217,6 +233,13 @@ impl<'a, T> OptionReadGuard<'a, T> {
     pub fn as_deref(&self) -> Result<Option<&T>, &PoisonError> {
         self.inner.as_deref().map(|x| x.as_ref())
     }
+
+    pub fn is_ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+    pub fn is_err(&self) -> bool {
+        self.inner.is_err()
+    }
     
     pub fn take_err(self) -> Option<PoisonError> {
         self.inner.take_err()
@@ -266,6 +289,13 @@ impl<'a, T> OptionWriteGuard<'a, T> {
     }
     pub fn as_deref(&mut self) -> Result<Option<&mut T>, &mut PoisonError> {
         self.inner.as_deref().map(|x| x.as_mut())
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+    pub fn is_err(&self) -> bool {
+        self.inner.is_err()
     }
 
     pub fn take_err(self) -> Option<PoisonError> {
@@ -358,6 +388,13 @@ impl<'a, T> MutexGuard<'a, T> where T: 'a {
     }
     pub fn as_deref_mut(&mut self) -> Result<&mut T, &mut PoisonError> {
         self.inner.as_deref_mut()
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+    pub fn is_err(&self) -> bool {
+        self.inner.is_err()
     }
 
     pub fn take_err(self) -> Option<PoisonError> {
@@ -468,10 +505,10 @@ impl<'a, T> OptionMutexGuard<'a, T> where T: 'a {
     }
 }
 
-pub struct ProtectedProvider<'a, T> {
+pub struct ProtectedAccess<'a, T> {
     data: &'a T
 }
-impl<'a,T> ProtectedProvider<'a, T> {
+impl<'a,T> ProtectedAccess<'a, T> {
     pub fn new(data: &'a T) -> Self {
         Self {
             data
@@ -486,7 +523,7 @@ impl<'a,T> ProtectedProvider<'a, T> {
 pub trait RwProvider {
     type Data;
 
-    fn access_raw(&self) -> ProtectedProvider<'_, Arc<RwLock<Self::Data>>>;
+    fn access_raw(&self) -> ProtectedAccess<'_, Arc<RwLock<Self::Data>>>;
 }
 pub trait RwProviderAccess : RwProvider {
     fn pass(&self, value: Self::Data) {
@@ -576,7 +613,7 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
 pub trait MutexProvider {
     type Data;
 
-    fn access_raw(&self) -> ProtectedProvider<'_, Arc<Mutex<Self::Data>>>;
+    fn access_raw(&self) -> ProtectedAccess<'_, Arc<Mutex<Self::Data>>>;
 
     fn is_poisoned(&self) -> bool {
         self.access_raw().take().is_poisoned()

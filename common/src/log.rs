@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 
 use crate::error::{IOError, OperationError};
-use crate::lock::{MutexProvider, OptionMutexProvider, ProtectedProvider};
+use crate::lock::{MutexProvider, OptionMutexProvider, ProtectedAccess};
 
 /// Determines the level used by the logger
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Deserialize)]
@@ -243,8 +243,8 @@ impl Default for Logger {
 impl MutexProvider for Logger {
     type Data = Option<LoadedLogger>;
 
-    fn access_raw(&self) -> ProtectedProvider<'_, Arc<Mutex<Self::Data>>> {
-        ProtectedProvider::new(&self.data)
+    fn access_raw(&self) -> ProtectedAccess<'_, Arc<Mutex<Self::Data>>> {
+        ProtectedAccess::new(&self.data)
     }
 }
 impl OptionMutexProvider<LoadedLogger> for Logger { }

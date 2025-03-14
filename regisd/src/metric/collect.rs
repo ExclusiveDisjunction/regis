@@ -502,17 +502,13 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
      */
     
     let raw_values: Vec<&str> = comma_splits.into_iter()
-        .map(|x| {
-            x.split(' ').next() //Only takes the first value, if it exists
-        })
-        .filter(|x| x.is_some()) //Only keep the real values
-        .map(|x| x.unwrap()) //Convert it from an option to a real value
+        .filter_map(|x| x.split(' ').next()) //Convert it from an option to a real value
         .filter(|x| !x.trim().is_empty())
         .collect(); //Remove the empty entries
 
     let parsed_values: Vec<u16>= raw_values.into_iter()
         .map(|x| x.parse::<f64>())
-        .map(|x| {
+        .filter_map(|x| {
             if let Ok(v) = x {
                 Some(v as u16)
             }
@@ -520,8 +516,6 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
                 None
             }
         })
-        .filter(|x| x.is_some())
-        .map(|x| x.unwrap())
         .collect();
 
     if parsed_values.len() != 8 {
@@ -532,10 +526,7 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
 
     let utils: Vec<Utilization> = parsed_values[0..3]
         .iter()
-        .map(|x| *x as u8)
-        .map(Utilization::new)
-        .filter(|x| x.is_ok())
-        .map(|x| x.unwrap())
+        .flat_map(|x | Utilization::new(*x as u8))
         .collect();
 
     if utils.len() != 4 {

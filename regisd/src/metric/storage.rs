@@ -61,15 +61,19 @@ impl<T> LimitedQueue<T> {
     pub fn iter_mut(&mut self) -> VecIterMut<'_, T> {
         self.data.iter_mut()
     }
-    pub fn into_iter(self) -> VecIntoIter<T> {
-        self.data.into_iter()
-    }
 
     pub fn get(&self, n: usize) -> Vec<&T> {
         self.data.iter().take(n).collect()
     }
     pub fn get_mut(&mut self, n: usize) -> Vec<&mut T> {
         self.data.iter_mut().take(n).collect()
+    }
+}
+impl<T> IntoIterator for LimitedQueue<T> {
+    type Item = T;
+    type IntoIter = VecIntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter()
     }
 }
 impl<T> From<LimitedQueue<T>> for Vec<T> {
