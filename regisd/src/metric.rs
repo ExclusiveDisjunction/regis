@@ -2,13 +2,26 @@ pub mod collect;
 pub mod io;
 pub mod storage;
 
-use common::log_info;
+use collect::collect_all_snapshots;
+use io::METRICS;
+
+use common::{log_info, log_warning, log_debug};
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
+use tokio::time::interval;
 
-use crate::message::{SimpleComm, WorkerTaskResult};
+use std::time::Duration;
+
+use crate::{config::CONFIG, message::{SimpleComm, WorkerTaskResult}};
 
 pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
+    let mut freq = match CONFIG.access().access() {
+        Some(v) => v.metric_freq,
+        None => return WorkerTaskResult::Configuration
+    };
+
+    let mut intv = interval(Duration::from_secs(freq));
+
     loop {
         select! {
             v = recv.recv() => {
@@ -24,10 +37,24 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                         break;
                     }
                     SimpleComm::ReloadConfiguration => {
+                        freq = match CONFIG.access().access() {
+                            Some(v) => v.metric_freq,
+                            None => return WorkerTaskResult::Configuration
+                        };
+                        intv = interval(Duration::from_secs(freq));
                         log_info!("(Metrics) Configuration reloaded");
                         continue;
                     }
                 }
+            }
+            _ = intv.tick() => {
+                let metrics = collect_all_snapshots().await;
+                if !METRICS.push(metrics) {
+                    log_warning!("(Metrics) Unable to insert into metrics. Resetting provider...");
+                    METRICS.reset();
+                }
+
+                log_debug!("(Metrics) Inserted metrics.");
             }
         }
     }

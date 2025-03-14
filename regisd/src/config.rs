@@ -10,7 +10,7 @@ pub struct Configuration {
     pub max_hosts: u8,
     pub hosts_port: u16,
     pub broadcasts_port: u16,
-    pub metric_frec: u64,
+    pub metric_freq: u64,
 }
 impl Default for Configuration {
     fn default() -> Self {
@@ -19,7 +19,7 @@ impl Default for Configuration {
             max_hosts: 6,
             hosts_port: CLIENTS_PORT,
             broadcasts_port: BROADCAST_PORT,
-            metric_frec: 1,
+            metric_freq: 1,
         }
     }
 }
