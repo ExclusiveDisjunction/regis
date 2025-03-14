@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// A measure that uses binary values for storage (GiB)
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum StorageDenom {
+pub enum BinaryScale {
     Byte = 0,
     KiB = 1,
     MiB = 2,
@@ -25,7 +25,7 @@ pub enum StorageDenom {
     TiB = 4,
     PiB = 5,
 }
-impl Debug for StorageDenom {
+impl Debug for BinaryScale {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -41,7 +41,7 @@ impl Debug for StorageDenom {
         )
     }
 }
-impl Display for StorageDenom {
+impl Display for BinaryScale {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -57,14 +57,14 @@ impl Display for StorageDenom {
         )
     }
 }
-impl TryFrom<String> for StorageDenom {
+impl TryFrom<String> for BinaryScale {
     type Error = ();
     /// Attempts to parse from shorthand, looking for either _iB, _B, _ib, _b, _i, or just B, b
     fn try_from(value: String) -> Result<Self, Self::Error> {
         <Self as TryFrom<&str>>::try_from(&value)
     }
 }
-impl TryFrom<&str> for StorageDenom {
+impl TryFrom<&str> for BinaryScale {
     type Error = ();
     /// Attempts to parse from shorthand, looking for either _iB, _B, _ib, _b or just B, b
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -97,7 +97,7 @@ impl TryFrom<&str> for StorageDenom {
         Ok(result)
     }
 }
-impl StorageDenom {
+impl BinaryScale {
     pub fn parse(mut num: u64) -> Self {
         let mut power: u32 = 0;
         loop {
@@ -120,17 +120,18 @@ impl StorageDenom {
     }
 }
 
+/// Represents a number with a suffix, denoting scale. 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct StorageNum {
+pub struct BinaryNumber {
     amount: f64,
-    bracket: StorageDenom,
+    bracket: BinaryScale,
 }
-impl Debug for StorageNum {
+impl Debug for BinaryNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {:?}", self.amount, self.bracket)
     }
 }
-impl Display for StorageNum {
+impl Display for BinaryNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.amount == 1.0f64 {
             write!(f, "{} {}", self.amount, self.bracket)
@@ -139,12 +140,12 @@ impl Display for StorageNum {
         }
     }
 }
-impl StorageNum {
-    pub fn new(amount: f64, bracket: StorageDenom) -> Self {
+impl BinaryNumber {
+    pub fn new(amount: f64, bracket: BinaryScale) -> Self {
         Self { amount, bracket }
     }
     pub fn parse(raw: u64) -> Self {
-        let bracket = StorageDenom::parse(raw);
+        let bracket = BinaryScale::parse(raw);
         let mut value: f64 = raw as f64;
 
         let power = 2u64.pow(10 * (bracket as u32));
@@ -164,6 +165,7 @@ impl StorageNum {
     }
 }
 
+/// Represents a percentage between 0-100. 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Utilization {
     inner: u8,
@@ -221,24 +223,34 @@ where
 /// Stores the information about a specific memory section. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
+    /// The name of the memory location
     pub name: String,
-    pub total: StorageNum,
-    pub used: StorageNum,
-    pub free: StorageNum,
-    pub shared: Option<StorageNum>,
-    pub buff: Option<StorageNum>,
-    pub available: Option<StorageNum>,
+    /// The total space of that location
+    pub total: BinaryNumber,
+    /// The used space of that location
+    pub used: BinaryNumber,
+    /// The free space of the location
+    pub free: BinaryNumber,
+    pub shared: Option<BinaryNumber>,
+    pub buff: Option<BinaryNumber>,
+    pub available: Option<BinaryNumber>,
 }
 impl Metric for MemoryMetric {}
 
 /// Stores the information about a specific storage section.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct StorageMetric {
+    /// The filesystem's name
     pub system: String,
+    /// The mount point
     pub mount: String,
-    pub size: StorageNum,
-    pub used: StorageNum,
-    pub availiable: StorageNum,
+    /// The total size
+    pub size: BinaryNumber,
+    /// The used space
+    pub used: BinaryNumber,
+    /// How much space is availiable
+    pub availiable: BinaryNumber,
+    /// The utilization of the drive
     pub capacity: Utilization,
 }
 impl Metric for StorageMetric {}
@@ -373,7 +385,7 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
 
             let mut converted = iter
                 .map(|x| x.parse::<u64>().ok())
-                .map(|x| x.map(StorageNum::parse));
+                .map(|x| x.map(BinaryNumber::parse));
 
             list.push(MemoryMetric {
                 name: name.to_string(),
@@ -426,7 +438,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
         }
 
         let name = splits[0].to_owned();
-        let disk_stats: Vec<StorageNum> = splits[1..3]
+        let disk_stats: Vec<BinaryNumber> = splits[1..3]
             .iter()
             .map(|x| {
                 let raw = match x.strip_suffix("K") {
@@ -435,7 +447,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
                 };
 
                 let parsed: u64 = raw.parse().unwrap_or(0);
-                StorageNum::parse(parsed)
+                BinaryNumber::parse(parsed)
             })
             .collect();
         let capacity = Utilization::new(splits[4].parse::<u8>().unwrap_or(0)).ok()?;
@@ -663,17 +675,17 @@ mod test {
     #[test]
     fn storage_denom() {
         let values = vec![
-            (10, StorageDenom::Byte),
-            (1024, StorageDenom::KiB),
-            (2u64.pow(20) + 4, StorageDenom::MiB),
-            (2u64.pow(30) + 100, StorageDenom::GiB),
-            (2u64.pow(40), StorageDenom::TiB),
-            (2u64.pow(50), StorageDenom::PiB),
-            (0, StorageDenom::Byte),
+            (10, BinaryScale::Byte),
+            (1024, BinaryScale::KiB),
+            (2u64.pow(20) + 4, BinaryScale::MiB),
+            (2u64.pow(30) + 100, BinaryScale::GiB),
+            (2u64.pow(40), BinaryScale::TiB),
+            (2u64.pow(50), BinaryScale::PiB),
+            (0, BinaryScale::Byte),
         ];
 
         for (i, (raw, expected)) in values.into_iter().enumerate() {
-            let converted = StorageDenom::parse(raw);
+            let converted = BinaryScale::parse(raw);
             assert_eq!(converted, expected, "at {i} failed");
         }
     }
@@ -681,17 +693,17 @@ mod test {
     #[test]
     fn storage_formatting() {
         let values = vec![
-            (StorageNum::parse(10), "10 bytes", "10 B"),
-            (StorageNum::parse(2u64.pow(10)), "1 kibibyte", "1 KiB"),
-            (StorageNum::parse(2u64.pow(10) * 2), "2 kibibytes", "2 KiB"),
-            (StorageNum::parse(2u64.pow(20)), "1 mebibyte", "1 MiB"),
-            (StorageNum::parse(2u64.pow(20) * 2), "2 mebibytes", "2 MiB"),
-            (StorageNum::parse(2u64.pow(30)), "1 gibibyte", "1 GiB"),
-            (StorageNum::parse(2u64.pow(30) * 2), "2 gibibytes", "2 GiB"),
-            (StorageNum::parse(2u64.pow(40)), "1 tebibyte", "1 TiB"),
-            (StorageNum::parse(2u64.pow(40) * 2), "2 tebibytes", "2 TiB"),
-            (StorageNum::parse(2u64.pow(50)), "1 pebibyte", "1 PiB"),
-            (StorageNum::parse(2u64.pow(50) * 2), "2 pebibytes", "2 PiB"),
+            (BinaryNumber::parse(10), "10 bytes", "10 B"),
+            (BinaryNumber::parse(2u64.pow(10)), "1 kibibyte", "1 KiB"),
+            (BinaryNumber::parse(2u64.pow(10) * 2), "2 kibibytes", "2 KiB"),
+            (BinaryNumber::parse(2u64.pow(20)), "1 mebibyte", "1 MiB"),
+            (BinaryNumber::parse(2u64.pow(20) * 2), "2 mebibytes", "2 MiB"),
+            (BinaryNumber::parse(2u64.pow(30)), "1 gibibyte", "1 GiB"),
+            (BinaryNumber::parse(2u64.pow(30) * 2), "2 gibibytes", "2 GiB"),
+            (BinaryNumber::parse(2u64.pow(40)), "1 tebibyte", "1 TiB"),
+            (BinaryNumber::parse(2u64.pow(40) * 2), "2 tebibytes", "2 TiB"),
+            (BinaryNumber::parse(2u64.pow(50)), "1 pebibyte", "1 PiB"),
+            (BinaryNumber::parse(2u64.pow(50) * 2), "2 pebibytes", "2 PiB"),
         ];
 
         for (i, (num, long, short)) in values.into_iter().enumerate() {
@@ -706,12 +718,12 @@ mod test {
     #[test]
     fn denom_parsing() {
         let values = vec![
-            (["B", "b", "B", "b", "b"], StorageDenom::Byte),
-            (["KiB", "KB", "kib", "kb", "ki"], StorageDenom::KiB),
-            (["MiB", "MB", "mib", "mb", "mi"], StorageDenom::MiB),
-            (["GiB", "GB", "gib", "gb", "gi"], StorageDenom::GiB),
-            (["TiB", "TB", "tib", "tb", "ti"], StorageDenom::TiB),
-            (["PiB", "PB", "pib", "pb", "pi"], StorageDenom::PiB),
+            (["B", "b", "B", "b", "b"], BinaryScale::Byte),
+            (["KiB", "KB", "kib", "kb", "ki"], BinaryScale::KiB),
+            (["MiB", "MB", "mib", "mb", "mi"], BinaryScale::MiB),
+            (["GiB", "GB", "gib", "gb", "gi"], BinaryScale::GiB),
+            (["TiB", "TB", "tib", "tb", "ti"], BinaryScale::TiB),
+            (["PiB", "PB", "pib", "pb", "pi"], BinaryScale::PiB),
         ];
 
         let mut result = [[true; 5]; 6];
@@ -719,7 +731,7 @@ mod test {
         for (i, (raw, expected)) in values.into_iter().enumerate() {
             let iter = raw
                 .into_iter()
-                .map(StorageDenom::try_from)
+                .map(BinaryScale::try_from)
                 .map(|x| x == Ok(expected))
                 .enumerate();
 
