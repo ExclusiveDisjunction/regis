@@ -2,13 +2,13 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Mutex};
 
 use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 
 use crate::error::{IOError, OperationError};
+use crate::lock::{MutexProvider, OptionMutexProvider, ProtectedProvider};
 
 /// Determines the level used by the logger
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Deserialize)]
@@ -36,6 +36,7 @@ impl Debug for LoggerLevel {
 }
 
 /// Abstraction for the logger to handle writing information to stdout and stderror.
+#[derive(Debug, Clone)]
 pub struct LoggerRedirect {
     std_out: Option<LoggerLevel>,
     std_err: bool
@@ -71,6 +72,7 @@ impl LoggerRedirect {
 }
 
 /// A single write-in-progress for the logger
+#[derive(Debug, Clone)]
 pub struct LoggerWrite {
     time_stamp: String,
     contents: String,
@@ -121,6 +123,7 @@ impl From<LoggerWrite> for Vec<u8> {
 }
 
 /// A structure that facilitates the writing done.
+#[derive(Debug)]
 pub struct LoadedLogger {
     file: File,
     level: LoggerLevel,
@@ -224,36 +227,7 @@ impl LoadedLogger {
     }
 }
 
-/// A simple structure to handle poison errors as None, and provides a wrapper around the mutex lock.
-pub struct LoggerLock<'a> {
-    inner: Option<MutexGuard<'a, Option<LoadedLogger>>>
-}
-impl<'a> LoggerLock<'a> {
-    pub fn new(guard: Option<MutexGuard<'a, Option<LoadedLogger>>>) -> Self {
-        Self {
-            inner: guard
-        }
-    }
-    pub fn new_poisioned() -> Self {
-        Self {
-            inner: None
-        }
-    }
-
-    pub fn access(&self) -> Option<&LoadedLogger> {
-        let acc = self.inner.as_ref()?;
-        let x: &Option<LoadedLogger> = acc.deref();
-        x.as_ref()
-    }
-    pub fn access_mut(&mut self) -> Option<&mut LoadedLogger> {
-        let acc = self.inner.as_mut()?;
-        let x: &mut Option<LoadedLogger> = acc.deref_mut();
-        x.as_mut()
-    }
-    pub fn is_poisoned(&self) -> bool {
-        self.inner.is_none()
-    }
-}
+//type LoggerLock<'a> = OptionMutexGuard<'a, LoadedLogger>;
 
 /// A global safe structure used to load and manage a logger.
 pub struct Logger {
@@ -266,6 +240,14 @@ impl Default for Logger {
         }
     }
 }
+impl MutexProvider for Logger {
+    type Data = Option<LoadedLogger>;
+
+    fn access_raw(&self) -> ProtectedProvider<'_, Arc<Mutex<Self::Data>>> {
+        ProtectedProvider::new(&self.data)
+    }
+}
+impl OptionMutexProvider<LoadedLogger> for Logger { }
 impl Logger {
     pub fn open<T: AsRef<Path>>(&self, path: T, level: LoggerLevel, redirect: LoggerRedirect) -> Result<(), std::io::Error> {
         let file = File::create(path)?;
@@ -279,39 +261,6 @@ impl Logger {
         self.pass(loaded);
         Ok(())
     }
-    pub fn pass(&self, logger: LoadedLogger) {
-        let mut guard = match self.data.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner()
-        };
-
-        *guard = Some(logger);
-        self.data.clear_poison(); //Since this function is always overriding the stored value, it is ok to clear the error.
-    }
-    pub fn close(&self) {
-        match self.data.lock() {
-            Ok(mut v) => *v = None,
-            Err(e) => {
-                let mut inner = e.into_inner();
-                *inner = None;
-                self.data.clear_poison();
-            }
-        }
-    }
-    pub fn is_open(&self) -> bool {
-        self.data
-        .lock()
-        .map(|v| v.is_some())
-        .ok()
-        .unwrap_or(false)
-    }
-    pub fn is_poisoned(&self) -> bool {
-        self.data.is_poisoned()
-    }
-
-    pub fn access(&self) -> LoggerLock<'_> {
-        LoggerLock::new(self.data.lock().ok())
-    }
 
     pub fn level(&self) -> Option<LoggerLevel> {
         let data = self.data.lock().unwrap();
@@ -320,7 +269,26 @@ impl Logger {
 }
 
 lazy_static! {
-    pub static ref logging: Logger = Logger::default();
+    pub static ref LOG: Logger = Logger::default();
+}
+
+pub fn log_direct(level: LoggerLevel, contents: String) {
+    if !LOG.is_open() {
+        return;
+    }
+
+    let mut lock = LOG.access();
+
+    let can_access = lock.access().map(|x| level > x.level()).unwrap_or(false);
+
+    if can_access {
+        if let Some(cont) = lock.access_mut() {
+            if let Err(e) = cont.write_direct(contents, level) {
+                eprintln!("unable to end log because of '{:?}'. Log will be closed", e);
+                LOG.reset();
+            }
+        }
+    }
 }
 
 /// A macro that allows for shorthand with logger writting. The callee must sepecify the level as `LoggerLevel`, and the message.
@@ -339,27 +307,17 @@ macro_rules! logger_write {
         {
             let contents: String = format!($($arg)*);
 
-            if $crate::log::logging.is_open() { //Do nothing, so that standard error is not flooded with 'not open' errors.
-                #[allow(unreachable_patterns)]
-                let true_level: $crate::log::LoggerLevel = match $level {
-                    $crate::log::LoggerLevel::Debug => $crate::log::LoggerLevel::Debug,
-                    $crate::log::LoggerLevel::Info => $crate::log::LoggerLevel::Info,
-                    $crate::log::LoggerLevel::Warning => $crate::log::LoggerLevel::Warning,
-                    $crate::log::LoggerLevel::Error => $crate::log::LoggerLevel::Error,
-                    $crate::log::LoggerLevel::Critical => $crate::log::LoggerLevel::Critical,
-                    //_ => compile_error!("the type passed into this enum must be of LoggerLevel")
-                };
-                let mut aquired = $crate::log::logging.access();
-
-                if aquired.access().map(|x| true_level >= x.level() && !x.is_writing()).unwrap_or(false) {
-                    if let Some(cont) = aquired.access_mut() {
-                        if let Err(e) = cont.write_direct(contents, true_level) {
-                            eprintln!("unable to end log because of '{:?}'. Log will be closed", e);
-                            $crate::log::logging.close();
-                        }
-                    }
-                }
-            }
+            #[allow(unreachable_patterns)]
+            let true_level: $crate::log::LoggerLevel = match $level {
+                $crate::log::LoggerLevel::Debug => $crate::log::LoggerLevel::Debug,
+                $crate::log::LoggerLevel::Info => $crate::log::LoggerLevel::Info,
+                $crate::log::LoggerLevel::Warning => $crate::log::LoggerLevel::Warning,
+                $crate::log::LoggerLevel::Error => $crate::log::LoggerLevel::Error,
+                $crate::log::LoggerLevel::Critical => $crate::log::LoggerLevel::Critical,
+                //_ => compile_error!("the type passed into this enum must be of LoggerLevel")
+            };
+            
+            $crate::log::log_direct(true_level, contents);
         }
     };
 }
@@ -416,7 +374,7 @@ macro_rules! log_critical {
 
 #[test]
 fn test_logger_write() {
-    if let Err(e) = logging.open("tmp.log", LoggerLevel::Debug, LoggerRedirect::default()) {
+    if let Err(e) = LOG.open("tmp.log", LoggerLevel::Debug, LoggerRedirect::default()) {
         panic!("unable to open log because '{:?}'", e);
     }
 
@@ -432,6 +390,6 @@ fn test_logger_write() {
     log_error!("hello 2");
     log_critical!("hello 2");
 
-    logging.close();
-    assert!(!logging.is_open());
+    LOG.reset();
+    assert!(!LOG.is_open());
 }

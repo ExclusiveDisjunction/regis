@@ -5,7 +5,7 @@ pub mod message;
 pub mod metric;
 pub mod orchestra;
 
-use common::log::{logging, LoggerLevel, LoggerRedirect};
+use common::log::{LOG, LoggerLevel, LoggerRedirect};
 use common::{log_debug, log_info, log_warning};
 use config::CONFIG;
 use locations::{LOG_DIR, TOTAL_DIR};
@@ -72,7 +72,7 @@ async fn main() -> Result<(), ExitCode> {
 
     let logger_path = format!("{}/{:?}-run.log", LOG_DIR, today);
 
-    if let Err(e) = logging.open(logger_path, level, redirect) {
+    if let Err(e) = LOG.open(logger_path, level, redirect) {
         eprintln!("Unable to start logger because '{e}'");
         return Err(ExitCode::FAILURE);
     }

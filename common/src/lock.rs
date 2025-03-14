@@ -1,6 +1,6 @@
 use super::error::PoisonError;
 
-use std::sync::{MutexGuard as StdMutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{MutexGuard as StdMutexGuard, RwLockReadGuard, RwLockWriteGuard, Arc, RwLock, Mutex};
 use std::fmt::{Debug, Display};
 
 /// An abstraction over the direct result of RwLock<T>::read(), for simplicity.
@@ -14,7 +14,7 @@ impl<'a, T> From<RwLockReadGuard<'a, T>> for ReadGuard<'a, T> {
         }
     }
 }
-impl<'a, T> From<PoisonError> for ReadGuard<'a, T> {
+impl<T> From<PoisonError> for ReadGuard<'_, T> {
     fn from(value: PoisonError) -> Self {
         Self {
             inner: Err(value)
@@ -28,7 +28,7 @@ impl<'a, T> From<Result<RwLockReadGuard<'a, T>, PoisonError>> for ReadGuard<'a, 
         }
     }
 }
-impl<'a, T> Display for ReadGuard<'a, T> where T: Display {
+impl<T> Display for ReadGuard<'_, T> where T: Display {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => {
@@ -40,7 +40,7 @@ impl<'a, T> Display for ReadGuard<'a, T> where T: Display {
         }
     }
 }
-impl<'a, T> Debug for ReadGuard<'a, T> where T: Debug {
+impl<T> Debug for ReadGuard<'_, T> where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => {
@@ -52,7 +52,7 @@ impl<'a, T> Debug for ReadGuard<'a, T> where T: Debug {
         }
     }
 }
-impl<'a, T> PartialEq for ReadGuard<'a, T> where T: PartialEq {
+impl<T> PartialEq for ReadGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         match (self.inner.as_deref(), other.inner.as_deref()) {
             (Ok(a), Ok(b)) => a.eq(b),
@@ -60,23 +60,23 @@ impl<'a, T> PartialEq for ReadGuard<'a, T> where T: PartialEq {
         }
     }
 }
-impl<'a, T> PartialEq<T> for ReadGuard<'a, T> where T: PartialEq {
+impl<T> PartialEq<T> for ReadGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &T) -> bool {
         self.inner.as_deref().ok() == Some(other)
     }
 }
-impl<'a, T> Eq for ReadGuard<'a, T>  where T: PartialEq + Eq { }
+impl<T> Eq for ReadGuard<'_, T>  where T: PartialEq + Eq { }
 impl<'a, T> ReadGuard<'a, T> {
-    pub fn access(&'a self) -> Option<&'a T> {
+    pub fn access(&self) -> Option<&T> {
         self.inner.as_deref().ok()
     }
-    pub fn access_error(&'a self) -> Option<&'a PoisonError> {
+    pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.as_ref().err()
     }
-    pub fn as_ref(&'a self) -> Result<&'a RwLockReadGuard<'a, T>, &'a PoisonError> {
+    pub fn as_ref(&self) -> Result<&RwLockReadGuard<'a, T>, &PoisonError> {
         self.inner.as_ref()
     }
-    pub fn as_deref(&'a self) -> Result<&'a T, &'a PoisonError> {
+    pub fn as_deref(&self) -> Result<&T, &PoisonError> {
         self.inner.as_deref()
     }
 
@@ -102,7 +102,7 @@ impl<'a, T> From<RwLockWriteGuard<'a, T>> for WriteGuard<'a, T> {
         }
     }
 }
-impl<'a, T> From<PoisonError> for WriteGuard<'a, T> {
+impl<T> From<PoisonError> for WriteGuard<'_, T> {
     fn from(value: PoisonError) -> Self {
         Self {
             inner: Err(value)
@@ -117,16 +117,16 @@ impl<'a, T> From<Result<RwLockWriteGuard<'a, T>, PoisonError>> for WriteGuard<'a
     }
 }
 impl<'a, T> WriteGuard<'a, T> {
-    pub fn access(&'a mut self) -> Option<&'a mut T> {
+    pub fn access(&mut self) -> Option<&mut T> {
         self.inner.as_deref_mut().ok()
     }
-    pub fn access_error(&'a self) -> Option<&'a PoisonError> {
+    pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.as_deref().err()
     }
-    pub fn as_ref(&'a mut self) -> Result<&'a mut RwLockWriteGuard<'a, T>, &'a mut PoisonError> {
+    pub fn as_ref(&mut self) -> Result<&mut RwLockWriteGuard<'a, T>, &mut PoisonError> {
         self.inner.as_mut()
     }
-    pub fn as_deref(&'a mut self) -> Result<&'a mut T, &'a mut PoisonError> {
+    pub fn as_deref(&mut self) -> Result<&mut T, &mut PoisonError> {
         self.inner.as_deref_mut()
     }
 
@@ -166,7 +166,7 @@ impl<'a, T> From<Result<RwLockReadGuard<'a, Option<T>>, PoisonError>> for Option
         }
     }
 }
-impl<'a, T> Display for OptionReadGuard<'a, T> where T: Display + Debug {
+impl<T> Display for OptionReadGuard<'_, T> where T: Display + Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => {
@@ -178,7 +178,7 @@ impl<'a, T> Display for OptionReadGuard<'a, T> where T: Display + Debug {
         }
     }
 }
-impl<'a, T> Debug for OptionReadGuard<'a, T> where T: Debug {
+impl<T> Debug for OptionReadGuard<'_, T> where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => {
@@ -190,12 +190,12 @@ impl<'a, T> Debug for OptionReadGuard<'a, T> where T: Debug {
         }
     }
 }
-impl<'a, T> PartialEq for OptionReadGuard<'a, T> where T: PartialEq {
+impl<T> PartialEq for OptionReadGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
     }
 }
-impl<'a, T> PartialEq<T> for OptionReadGuard<'a, T> where T: PartialEq {
+impl<T> PartialEq<T> for OptionReadGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &T) -> bool {
         match self.inner.as_deref() {
             Ok(v) => v.as_ref() == Some(other),
@@ -203,18 +203,18 @@ impl<'a, T> PartialEq<T> for OptionReadGuard<'a, T> where T: PartialEq {
         }
     }
 }
-impl<'a, T> Eq for OptionReadGuard<'a, T>  where T: PartialEq + Eq { }
+impl<T> Eq for OptionReadGuard<'_, T>  where T: PartialEq + Eq { }
 impl<'a, T> OptionReadGuard<'a, T> {
-    pub fn access(&'a self) -> Option<&'a T> {
-        self.inner.access().map(|x| x.as_ref()).flatten()
+    pub fn access(&self) -> Option<&T> {
+        self.inner.access().and_then(|x| x.as_ref())
     }
-    pub fn access_error(&'a self) -> Option<&'a PoisonError> {
+    pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.access_error()
     }
-    pub fn as_ref(&'a self) -> Result<&'a RwLockReadGuard<'a, Option<T>>, &'a PoisonError> {
+    pub fn as_ref(&self) -> Result<&RwLockReadGuard<'a, Option<T>>, &PoisonError> {
         self.inner.as_ref()
     }
-    pub fn as_deref(&'a self) -> Result<Option<&'a T>, &'a PoisonError> {
+    pub fn as_deref(&self) -> Result<Option<&T>, &PoisonError> {
         self.inner.as_deref().map(|x| x.as_ref())
     }
     
@@ -255,16 +255,16 @@ impl<'a, T> From<Result<RwLockWriteGuard<'a, Option<T>>, PoisonError>> for Optio
     }
 }
 impl<'a, T> OptionWriteGuard<'a, T> {
-    pub fn access(&'a mut self) -> Option<&'a mut T> {
-        self.inner.access().map(|x| x.as_mut()).flatten()
+    pub fn access(&mut self) -> Option<&mut T> {
+        self.inner.access().and_then(|x| x.as_mut())
     }
-    pub fn access_error(&'a self) -> Option<&'a PoisonError> {
+    pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.access_error()
     }
-    pub fn as_ref(&'a mut self) -> Result<&'a mut RwLockWriteGuard<'a, Option<T>>, &'a mut PoisonError> {
+    pub fn as_ref(&mut self) -> Result<&mut RwLockWriteGuard<'a, Option<T>>, &mut PoisonError> {
         self.inner.as_ref()
     }
-    pub fn as_deref(&'a mut self) -> Result<Option<&'a mut T>, &'a mut PoisonError> {
+    pub fn as_deref(&mut self) -> Result<Option<&mut T>, &mut PoisonError> {
         self.inner.as_deref().map(|x| x.as_mut())
     }
 
@@ -283,7 +283,7 @@ impl<'a, T> OptionWriteGuard<'a, T> {
 pub struct MutexGuard<'a, T> {
     inner: Result<StdMutexGuard<'a, T>, PoisonError>
 }
-impl<'a, T> From<StdMutexGuard<'a, T>> for MutexGuard<'a, T> {
+impl<'a, T> From<StdMutexGuard<'a, T>> for MutexGuard<'a, T> where T: 'a {
     fn from(value: StdMutexGuard<'a, T>) -> Self {
         Self {
             inner: Ok(value)
@@ -297,14 +297,14 @@ impl<T> From<PoisonError> for MutexGuard<'_, T> {
         }
     }
 }
-impl<'a, T> From<Result<StdMutexGuard<'a, T>, PoisonError>> for MutexGuard<'a, T> {
+impl<'a, T> From<Result<StdMutexGuard<'a, T>, PoisonError>> for MutexGuard<'a, T> where T: 'a {
     fn from(value: Result<StdMutexGuard<'a, T>, PoisonError>) -> Self {
         Self {
             inner: value
         }
     }
 }   
-impl<'a, T> Display for MutexGuard<'a, T> where T: Display {
+impl<T> Display for MutexGuard<'_, T> where T: Display {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => v.fmt(f),
@@ -312,7 +312,7 @@ impl<'a, T> Display for MutexGuard<'a, T> where T: Display {
         }
     }
 }
-impl<'a, T> Debug for MutexGuard<'a, T> where T: Debug {
+impl<T> Debug for MutexGuard<'_, T> where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => v.fmt(f),
@@ -320,7 +320,7 @@ impl<'a, T> Debug for MutexGuard<'a, T> where T: Debug {
         }
     }
 }
-impl<'a, T> PartialEq for MutexGuard<'a, T> where T: PartialEq {
+impl<T> PartialEq for MutexGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         match (self.inner.as_deref(), other.inner.as_deref()) {
             (Ok(a), Ok(b)) => a.eq(b),
@@ -328,8 +328,8 @@ impl<'a, T> PartialEq for MutexGuard<'a, T> where T: PartialEq {
         }
     }
 }
-impl<'a, T> Eq for MutexGuard<'a, T> where T: PartialEq + Eq {}
-impl<'a, T> PartialEq<T> for MutexGuard<'a, T> where T: PartialEq {
+impl<T> Eq for MutexGuard<'_, T> where T: PartialEq + Eq {}
+impl<T> PartialEq<T> for MutexGuard<'_, T> where T: PartialEq {
     fn eq(&self, other: &T) -> bool {
         match self.inner.as_deref() {
             Ok(v) => v.eq(other),
@@ -337,26 +337,26 @@ impl<'a, T> PartialEq<T> for MutexGuard<'a, T> where T: PartialEq {
         }   
     }
 }
-impl<'a, T> MutexGuard<'a, T> {
-    pub fn access(&'a self) -> Option<&'a T> {
+impl<'a, T> MutexGuard<'a, T> where T: 'a {
+    pub fn access(&self) -> Option<&T> {
         self.inner.as_deref().ok()
     }
-    pub fn access_mut(&'a mut self) -> Option<&'a mut T> {
+    pub fn access_mut(&mut self) -> Option<&mut T> {
         self.inner.as_deref_mut().ok()
     }
     pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.as_deref().err()
     }
-    pub fn as_ref(&'a self) -> Result<&'a StdMutexGuard<'a, T>, &'a PoisonError> {
+    pub fn as_ref(&self) -> Result<&StdMutexGuard<'a, T>, &PoisonError> {
         self.inner.as_ref()
     }
-    pub fn as_mut(&'a mut self) -> Result<&'a mut StdMutexGuard<'a, T>, &'a mut PoisonError> {
+    pub fn as_mut(&mut self) -> Result<&mut StdMutexGuard<'a, T>, &mut PoisonError> {
         self.inner.as_mut()
     }
-    pub fn as_deref(&'a self) -> Result<&'a T, &'a PoisonError> {
+    pub fn as_deref(&self) -> Result<&T, &PoisonError> {
         self.inner.as_deref()
     }
-    pub fn as_deref_mut(&'a mut self) -> Result<&'a mut T, &'a mut PoisonError> {
+    pub fn as_deref_mut(&mut self) -> Result<&mut T, &mut PoisonError> {
         self.inner.as_deref_mut()
     }
 
@@ -372,10 +372,10 @@ impl<'a, T> MutexGuard<'a, T> {
 }
 
 /// An abstraction over the direct result of Mutex<Option<T>>::lock(), for simplicity. It will map outputs so that the optional results (in case of error OR empty value) will be Option<...>. 
-pub struct OptionMutexGuard<'a, T> {
+pub struct OptionMutexGuard<'a, T>{
     inner: MutexGuard<'a, Option<T>> 
 }
-impl<'a, T> From<StdMutexGuard<'a, Option<T>>> for OptionMutexGuard<'a, T> {
+impl<'a, T> From<StdMutexGuard<'a, Option<T>>> for OptionMutexGuard<'a, T>{
     fn from(value: StdMutexGuard<'a, Option<T>>) -> Self {
         Self {
             inner: MutexGuard::from(value)
@@ -389,7 +389,7 @@ impl<T> From<PoisonError> for OptionMutexGuard<'_, T> {
         }
     }
 }
-impl<'a, T> From<Result<StdMutexGuard<'a, Option<T>>, PoisonError>> for OptionMutexGuard<'a, T> {
+impl<'a, T> From<Result<StdMutexGuard<'a, Option<T>>, PoisonError>> for OptionMutexGuard<'a, T>{
     fn from(value: Result<StdMutexGuard<'a, Option<T>>, PoisonError>) -> Self {
         Self {
             inner: MutexGuard::from(value)
@@ -408,7 +408,7 @@ impl<T> Display for OptionMutexGuard<'_, T> where T: Display + Debug {
         }
     }
 }
-impl<T> Debug for OptionMutexGuard<'_, T> where T: Debug {
+impl<T> Debug for OptionMutexGuard<'_, T> where T: Debug  {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.inner.as_deref() {
             Ok(v) => {
@@ -434,26 +434,26 @@ impl<T> PartialEq<T> for OptionMutexGuard<'_, T> where T: PartialEq {
         }
     }
 }
-impl<'a, T> OptionMutexGuard<'a, T> {
-    pub fn access(&'a self) -> Option<&'a T> {
-        self.inner.as_deref().ok().map(|x| x.as_ref()).flatten()
+impl<'a, T> OptionMutexGuard<'a, T> where T: 'a {
+    pub fn access(&self) -> Option<&T> {
+        self.inner.as_deref().ok().and_then(|x| x.as_ref())
     }
-    pub fn access_mut(&'a mut self) -> Option<&'a mut T> {
-        self.inner.as_deref_mut().ok().map(|x| x.as_mut()).flatten()
+    pub fn access_mut(&mut self) -> Option<&mut T> {
+        self.inner.as_deref_mut().ok().and_then(|x| x.as_mut())
     }
     pub fn access_error(&self) -> Option<&PoisonError> {
         self.inner.as_deref().err()
     }
-    pub fn as_ref(&'a self) -> Result<&'a StdMutexGuard<'a, Option<T>>, &'a PoisonError> {
+    pub fn as_ref(&self) -> Result<&StdMutexGuard<'a, Option<T>>, &PoisonError> {
         self.inner.as_ref()
     }
-    pub fn as_mut(&'a mut self) -> Result<&'a mut StdMutexGuard<'a, Option<T>>, &'a mut PoisonError> {
+    pub fn as_mut(&mut self) -> Result<&mut StdMutexGuard<'a, Option<T>>, &mut PoisonError> {
         self.inner.as_mut()
     }
-    pub fn as_deref(&'a self) -> Result<Option<&'a T>, &'a PoisonError> {
+    pub fn as_deref(&self) -> Result<Option<&T>, &PoisonError> {
         self.inner.as_deref().map(|x| x.as_ref())
     }
-    pub fn as_deref_mut(&'a mut self) -> Result<Option<&'a mut T>, &'a mut PoisonError> {
+    pub fn as_deref_mut(&mut self) -> Result<Option<&mut T>, &mut PoisonError> {
         self.inner.as_deref_mut().map(|x| x.as_mut())
     }
 
@@ -465,5 +465,186 @@ impl<'a, T> OptionMutexGuard<'a, T> {
     }
     pub fn take(self) -> Result<StdMutexGuard<'a, Option<T>>, PoisonError> {
         self.inner.take()
+    }
+}
+
+pub struct ProtectedProvider<'a, T> {
+    data: &'a T
+}
+impl<'a,T> ProtectedProvider<'a, T> {
+    pub fn new(data: &'a T) -> Self {
+        Self {
+            data
+        }
+    }
+
+    fn take(&self) -> &'a T {
+        self.data
+    }
+}
+
+pub trait RwProvider {
+    type Data;
+
+    fn access_raw(&self) -> ProtectedProvider<'_, Arc<RwLock<Self::Data>>>;
+}
+pub trait RwProviderAccess : RwProvider {
+    fn pass(&self, value: Self::Data) {
+        let arc = self.access_raw().take();
+        let mut guard = match arc.write() {
+            Ok(g) => g,
+            Err(e) => e.into_inner()
+        };
+
+        *guard = value;
+        arc.clear_poison();
+    }
+    fn set_to_default(&self) where Self::Data: Default {
+        self.pass(Self::Data::default())
+    }
+    fn is_poisoned(&self) -> bool {
+        self.access_raw().take().is_poisoned()
+    }
+
+    fn access(&self) -> ReadGuard<'_, Self::Data> {
+        self.access_raw()
+            .take()
+            .read()
+            .map_err(PoisonError::new)
+            .into()
+    }
+    fn access_mut(&self) -> WriteGuard<'_, Self::Data> {
+        self.access_raw()
+            .take()
+            .write()
+            .map_err(PoisonError::new)
+            .into()
+    }
+}
+
+pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
+    fn pass(&self, value: T) {
+        let arc = self.access_raw().take();
+        let mut guard = match arc.write() {
+            Ok(g) => g,
+            Err(e) => e.into_inner()
+        };
+
+        *guard = Some(value);
+        arc.clear_poison();
+    }
+    fn set_to_default(&self) where T: Default {
+        self.pass(T::default())
+    }
+
+    fn reset(&self) {
+        let raw = self.access_raw().take();
+        match raw.write() {
+            Ok(mut v) => *v = None,
+            Err(e ) => {
+                let mut inner = e.into_inner();
+                *inner = None;
+                raw.clear_poison();
+            }
+        }
+    }
+    fn is_open(&self) -> bool {
+        self.access_raw()
+            .take()
+            .read()
+            .map(|v| v.is_some())
+            .ok()
+            .unwrap_or(false)
+    }
+
+    fn access(&self) -> OptionReadGuard<'_, T> {
+        self.access_raw()
+            .take()
+            .read()
+            .map_err(PoisonError::new)
+            .into()
+    }
+    fn access_mut(&self) -> OptionWriteGuard<'_, T> {
+        self.access_raw()
+            .take()
+            .write()
+            .map_err(PoisonError::new)
+            .into()
+    }
+}
+
+pub trait MutexProvider {
+    type Data;
+
+    fn access_raw(&self) -> ProtectedProvider<'_, Arc<Mutex<Self::Data>>>;
+
+    fn is_poisoned(&self) -> bool {
+        self.access_raw().take().is_poisoned()
+    }
+}
+pub trait MutexProviderAccess : MutexProvider {
+    fn pass(&self, value: Self::Data) {
+        let arc = self.access_raw().take();
+        let mut guard = match arc.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner()
+        };
+
+        *guard = value;
+        arc.clear_poison();
+    }
+    fn set_to_default(&self) where Self::Data: Default {
+        self.pass(Self::Data::default())
+    }
+    fn access(&self) -> MutexGuard<'_, Self::Data> {
+        self.access_raw()
+            .take()
+            .lock()
+            .map_err(PoisonError::new)
+            .into()
+    }
+}
+
+pub trait OptionMutexProvider<T>: MutexProvider<Data = Option<T>> {
+    fn pass(&self, value: T) {
+        let arc = self.access_raw().take();
+        let mut guard = match arc.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner()
+        };
+
+        *guard = Some(value);
+        arc.clear_poison();
+    }
+    fn set_to_default(&self) where T: Default {
+        self.pass(T::default())
+    }
+
+    fn reset(&self) {
+        let raw = self.access_raw().take();
+        match raw.lock() {
+            Ok(mut v) => *v = None,
+            Err(e ) => {
+                let mut inner = e.into_inner();
+                *inner = None;
+                raw.clear_poison();
+            }
+        }
+    }
+    fn is_open(&self) -> bool {
+        self.access_raw()
+            .take()
+            .lock()
+            .map(|v| v.is_some())
+            .ok()
+            .unwrap_or(false)
+    }
+
+    fn access(&self) -> OptionMutexGuard<'_, T> {
+        self.access_raw()
+            .take()
+            .lock()
+            .map_err(PoisonError::new)
+            .into()
     }
 }

@@ -235,7 +235,7 @@ impl Display for PoisonError {
     }
 }
 impl PoisonError {
-    pub fn new<T: Display>(message: &T) -> Self {
+    pub fn new<T: Display>(message: T) -> Self {
         Self {
             message: message.to_string()
         }
