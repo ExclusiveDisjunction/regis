@@ -220,6 +220,7 @@ impl Debug for NamingError {
     }
 }
 
+#[derive(PartialEq, Clone)]
 pub struct PoisonError {
     message: String
 }

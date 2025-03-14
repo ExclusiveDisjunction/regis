@@ -1,66 +1,47 @@
 use super::{collect::CollectedMetrics, storage::LimitedQueue};
-use std::ops::Deref;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use common::error::PoisonError;
+use common::lock::{ReadGuard, WriteGuard};
+use std::collections::vec_deque::{Iter as VecIter, IterMut as VecIterMut, IntoIter as VecIntoIter};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use lazy_static::lazy_static;
 
 pub const METRICS_HOLDING: usize = 50;
 
-pub struct MetricsCollection {
-    metrics: LimitedQueue<CollectedMetrics>,
-    events: HashMap<u32, Arc<dyn Fn(CollectedMetrics) -> () + Send + Sync + 'static>>,
-    curr_id: u32
-}
-impl Default for MetricsCollection {
-    fn default() -> Self {
-        Self {
-            metrics: LimitedQueue::new(METRICS_HOLDING),
-            events: HashMap::new(),
-            curr_id: 0
-        }
-    }
-}
-impl MetricsCollection {
-    fn get_next_id(&mut self) -> u32 {
-        let result = self.curr_id;
-        self.curr_id += 1;
-
-        result
-    }
-
-    pub fn push(&mut self, metric: CollectedMetrics) {
-        self.metrics.insert(metric.clone());
-
-        self.notify(metric)
-    }
-    pub fn notify(&self, metric: CollectedMetrics) {
-        for (_, event) in &self.events {
-            let func = event.deref();
-            func(metric.clone())
-        }
-    }
-
-    pub fn subscribe<F>(&mut self, func: F) -> u32 
-    where F: Fn(CollectedMetrics) -> () + Send + Sync + 'static {
-        let id = self.get_next_id();
-        self.events.insert(id, Arc::new(func));
-
-        id
-    }
-    pub fn unsubscribe(&mut self, id: u32) -> bool {
-        self.events.remove(&id).is_some()
-    }
-}
+type Storage = LimitedQueue<CollectedMetrics>;
 
 pub struct MetricProvider {
-    inner: Arc<RwLock<MetricsCollection>>
+    inner: Arc<RwLock<LimitedQueue<CollectedMetrics>>>
 }
 impl Default for MetricProvider {
     fn default() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(MetricsCollection::default()))
+            inner: Arc::new(
+                RwLock::new(
+                    LimitedQueue::new(METRICS_HOLDING)
+                )
+            )
         }
+    }
+}
+impl MetricProvider {
+    
+
+    pub fn push(&self, data: MetricProvider) {
+        
+    }
+
+    pub fn access(&self) -> ReadGuard<'_, Storage> {
+        self.inner
+            .read()
+            .map_err(|x| PoisonError::new(&x))
+            .into()
+    }
+    pub fn access_mut(&self) -> WriteGuard<'_, Storage> {
+        self.inner
+            .write()
+            .map_err(|x| PoisonError::new(&x))
+            .into()
     }
 }
 
