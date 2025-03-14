@@ -279,7 +279,7 @@ pub fn log_direct(level: LoggerLevel, contents: String) {
 
     let mut lock = LOG.access();
 
-    let can_access = lock.access().map(|x| level > x.level()).unwrap_or(false);
+    let can_access = lock.access().map(|x| level >= x.level()).unwrap_or(false);
 
     if can_access {
         if let Some(cont) = lock.access_mut() {

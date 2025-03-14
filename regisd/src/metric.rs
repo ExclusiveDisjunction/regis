@@ -20,6 +20,8 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
         None => return WorkerTaskResult::Configuration
     };
 
+    log_info!("(Metrics) Started recording with frequency {freq} seconds.");
+
     let mut intv = interval(Duration::from_secs(freq));
 
     loop {
@@ -46,15 +48,16 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                         continue;
                     }
                 }
-            }
+            },
             _ = intv.tick() => {
+                //log_debug!("(Metrics) Started metrics collection...");
                 let metrics = collect_all_snapshots().await;
                 if !METRICS.push(metrics) {
                     log_warning!("(Metrics) Unable to insert into metrics. Resetting provider...");
                     METRICS.reset();
                 }
 
-                log_debug!("(Metrics) Inserted metrics.");
+                log_debug!("(Metrics) Metrics inserted");
             }
         }
     }

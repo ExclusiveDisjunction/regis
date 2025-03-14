@@ -183,6 +183,7 @@ impl<Task> RestartableTask<Task>
                     RestartStatus::TriesExceeded
                 }
                 else {
+                    self.restart_count += 1;
                     self.task.restart(func, buffer_size)
                 }
         }
