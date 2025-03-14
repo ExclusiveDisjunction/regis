@@ -465,7 +465,9 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
         )
     }
 
-    todo!()
+    Some(
+        StorageSnapshot::new(result)
+    )
 }
 
 pub async fn collect_cpu() -> Option<CpuMetric> {
