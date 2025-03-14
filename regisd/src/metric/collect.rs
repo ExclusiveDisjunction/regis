@@ -315,6 +315,7 @@ pub struct NetworkMetric {
 }
 impl Metric for NetworkMetric { }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CollectedMetrics {
     pub time: i64,
     pub memory: Option<MemorySnapshot>,
