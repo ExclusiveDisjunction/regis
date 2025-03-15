@@ -8,6 +8,8 @@ pub const METRICS_HOLDING: usize = 50;
 
 type Storage = LimitedQueue<CollectedMetrics>;
 
+// Thing to improve: Include a mechanism that will eventually hold the discarded items from memory. After that buffer fills up, write it to a file, with a specified number of files kept. This way there is some more historical data, but not stored in memory all of the time.
+
 pub struct MetricProvider {
     inner: Arc<RwLock<LimitedQueue<CollectedMetrics>>>
 }

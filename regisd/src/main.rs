@@ -1,6 +1,6 @@
 pub mod config;
 pub mod connect;
-pub mod locations;
+pub mod loc;
 pub mod msg;
 pub mod metric;
 pub mod orchestra;
@@ -8,7 +8,7 @@ pub mod orchestra;
 use common::log::{LOG, LoggerLevel, LoggerRedirect};
 use common::{log_debug, log_info, log_warning};
 use config::CONFIG;
-use locations::{DAEMON_LOG_DIR, TOTAL_DIR};
+use loc::{DAEMON_LOG_DIR, TOTAL_DIR};
 use orchestra::Orchestrator;
 
 use std::process::ExitCode;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), ExitCode> {
     log_info!("Launching regisd...");
 
     log_debug!("Loading configuration");
-    if let Err(e) = CONFIG.open(locations::CONFIG_PATH) {
+    if let Err(e) = CONFIG.open(loc::CONFIG_PATH) {
         log_warning!(
             "Unable to load configuration, creating default for this initalization. Error: '{:?}'",
             e
@@ -93,7 +93,7 @@ async fn main() -> Result<(), ExitCode> {
     let orch = Orchestrator::initialize();
 
     let result = orch.run().await;
-    CONFIG.save(locations::CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
+    CONFIG.save(loc::CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
     
     result
 }

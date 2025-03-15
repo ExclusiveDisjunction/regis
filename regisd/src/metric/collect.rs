@@ -409,27 +409,40 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
         return None;
     }
 
-    let output = Command::new("df")
+    let raw_output = Command::new("df")
         .arg("-BK")
         .output()
-        .await
-        .ok()?;
+        .await;
+
+    let output = match raw_output {
+        Ok(v) => v,
+        Err(e) => {
+            log_warning!("Unable to collect storage metrics '{e}'");
+            return None;
+        }
+    };
 
     if !output.status.success() {
         return None;
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
-    let by_line = raw.split("\n")
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let by_line: Vec<&str> = raw.split("\n")
         .skip(1) //Skip the header 
-        .filter(|x| !x.trim().is_empty()); //Skips empty lines
+        .map(|x| x.trim())
+        .filter(|x| !x.is_empty())//Skips empty lines
+        .collect(); 
 
     let mut result: Vec<StorageMetric> = vec![];
     for line in by_line {
+        let line = line.trim();
+        if !line.starts_with("/dev") {
+            continue;
+        }
+
         let splits: Vec<&str> = line.split(' ')
-            .filter(|x| !x.trim().is_empty())
             .map(|x| x.trim())
-            .filter(|x| x.starts_with("/dev"))
+            .filter(|x| !x.is_empty())
             .collect();
 
         //Len should be 6
@@ -438,7 +451,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
         }
 
         let name = splits[0].to_owned();
-        let disk_stats: Vec<BinaryNumber> = splits[1..3]
+        let disk_stats: Vec<BinaryNumber> = splits[1..4]
             .iter()
             .map(|x| {
                 let raw = match x.strip_suffix("K") {
@@ -446,7 +459,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
                     None => x
                 };
 
-                let parsed: u64 = raw.parse().unwrap_or(0);
+                let parsed: u64 = raw.parse().unwrap_or(0) * 1024; //Since the unit is KB, we want it in B.
                 BinaryNumber::parse(parsed)
             })
             .collect();
@@ -476,7 +489,7 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
     }
     
     let raw_output = Command::new("sh")
-        .args(&["-c", "top -b -n 1 | grep \"%Cpu(s)\""])
+        .args(["-c", "top -b -n 1 | grep \"%Cpu(s)\""])
         .output()
         .await;
 
@@ -634,7 +647,7 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
     }
 
     let raw_output = Command::new("sh")
-        .args(&["-c", "ps -e --no-headers | wc -l"])
+        .args(["-c", "ps -e --no-headers | wc -l"])
         .output()
         .await;
 

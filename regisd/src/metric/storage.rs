@@ -97,7 +97,7 @@ impl<T> LimitedQueue<T> where T: Default + Clone {
     }
 
     pub fn iter(&self) -> LimitedQueueIter<'_, T> {
-        LimitedQueueIter::new(&self)
+        LimitedQueueIter::new(self)
     }
     pub fn get(&self, n: usize) -> Vec<&T> {
         self.data.iter().take(n).collect()

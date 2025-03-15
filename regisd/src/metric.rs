@@ -5,7 +5,7 @@ pub mod storage;
 use collect::collect_all_snapshots;
 use io::METRICS;
 
-use common::{log_info, log_warning, log_debug};
+use common::{log_info, log_warning, log_debug, log_error};
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::interval;
@@ -29,7 +29,10 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
             v = recv.recv() => {
                 let v = match v {
                     Some(v) => v,
-                    None => return WorkerTaskResult::Failure
+                    None => {
+                        log_error!("(Metrics) Unable to get message from Orch.");
+                        return WorkerTaskResult::Failure;
+                    }
                 };
 
                 match v {
@@ -41,7 +44,10 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                     SimpleComm::ReloadConfiguration => {
                         freq = match CONFIG.access().access() {
                             Some(v) => v.metric_freq,
-                            None => return WorkerTaskResult::Configuration
+                            None => {
+                                log_warning!("(Metrics) Unable to reload from configuration. Aboriting.");
+                                return WorkerTaskResult::Configuration;
+                            }
                         };
                         intv = interval(Duration::from_secs(freq));
                         log_info!("(Metrics) Configuration reloaded");
@@ -51,7 +57,6 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
             },
             _ = intv.tick() => {
                 let metrics = collect_all_snapshots().await;
-                log_debug!("(Metrics) Inserting: '{:?}'", &metrics);
                 if !METRICS.push(metrics) {
                     log_warning!("(Metrics) Unable to insert into metrics. Resetting provider...");
                     METRICS.reset();
