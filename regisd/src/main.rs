@@ -11,11 +11,12 @@ use config::CONFIG;
 use daemonize::Daemonize;
 use loc::{DAEMON_LOG_DIR, TOTAL_DIR};
 use orchestra::Orchestrator;
-use regisd_com::loc::{PID_PATH, STD_ERR_PATH, STD_OUT_PATH};
+use regisd_com::loc::{CONSOLE_LOG_DIR, DAEMON_DIR, PID_PATH, STD_ERR_PATH, STD_OUT_PATH};
 use tokio::runtime::Runtime;
 
 use std::process::ExitCode;
-use std::fs::File;
+use std::fs::{self, File};
+use std::os::unix::fs::PermissionsExt;
 
 use clap::Parser;
 
@@ -88,12 +89,30 @@ fn main() -> Result<(), ExitCode> {
 
     let today = chrono::Local::now();
     if let Err(e) = create_dir_all(TOTAL_DIR) {
-        eprintln!("Unable startup service. Checking of directory structure failed '{e}'.");
+        eprintln!("Unable to startup service. Checking of directory structure failed '{e}'.");
         return Err(ExitCode::FAILURE);
     }
 
     if let Err(e) = create_dir_all(DAEMON_LOG_DIR) {
-        eprintln!("Unable startup service. Checking of directory structure failed '{e}'.");
+        eprintln!("Unable to startup service. Checking of directory structure failed '{e}'.");
+        return Err(ExitCode::FAILURE);
+    }
+    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR) {
+        eprintln!("Unable to startup service. Checking of directory structure failed '{e}'.");
+        return Err(ExitCode::FAILURE);
+    }
+
+    if let Err(e) = fs::set_permissions(DAEMON_LOG_DIR, fs::Permissions::from_mode(0o777)) {
+        eprintln!("Unable to make logs open to everyone. '{e}'");
+        return Err(ExitCode::FAILURE);
+    }
+    if let Err(e) = fs::set_permissions(CONSOLE_LOG_DIR, fs::Permissions::from_mode(0o777)) {
+        eprintln!("Unable to make logs open to everyone. '{e}'");
+        return Err(ExitCode::FAILURE);
+    }
+
+    if let Err(e) = create_dir_all(DAEMON_DIR) {
+        eprintln!("Unable to startup service. Checking of directory structure failed '{e}'.");
         return Err(ExitCode::FAILURE);
     }
 

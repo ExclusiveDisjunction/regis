@@ -1,0 +1,10 @@
+[Unit]
+Description=A script to run artificial stress on the computer for examples on regisd.
+
+[Service]
+ExecStart=/bin/bash /etc/regis/stress.bash
+Type=simple
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

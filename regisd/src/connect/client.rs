@@ -25,8 +25,9 @@ impl KillMessage for WorkerComm {
     }
 }
 
-async fn setup_listener(addr: Ipv4Addr) -> Result<(usize, TcpListener), WorkerTaskResult> {
-    let (port, max_clients) = match CONFIG.access().access() {
+async fn setup_listener(addr: Ipv4Addr, port: &mut u16, max_clients: &mut usize, old_listener: Option<&mut TcpListener>) -> Result<Option<TcpListener>, WorkerTaskResult> {
+    let old_port = *port;
+    (*port, *max_clients) = match CONFIG.access().access() {
         Some(v) => (v.hosts_port, v.max_hosts as usize),
         None => {
             log_error!("(Clients) Unable to retrive configuration. Exiting task.");
@@ -34,25 +35,44 @@ async fn setup_listener(addr: Ipv4Addr) -> Result<(usize, TcpListener), WorkerTa
         }
     };
 
-    let addr = SocketAddr::from((addr, port));
-    let listener = match TcpListener::bind(addr).await {
-        Ok(v) => v,
-        Err(e) => {
-            log_error!("(Clients) Unable to open the TCP listener '{e}', exiting task.");
-            return Err(WorkerTaskResult::Sockets);
-        }
-    };
+    log_debug!("(Client) Setting up listener: Old Port: {old_port}, New Port: {}", *port);
+    if old_port != *port {
+        log_info!("(Client) Listener being reset, opening on port {}", *port);
+        let addr = SocketAddr::from((addr, *port));
 
-    Ok((max_clients, listener))
+        let new_listener = match TcpListener::bind(addr).await {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!("(Clients) Unable to open TCP listener '{e}', exiting task.");
+                return Err(WorkerTaskResult::Sockets);
+            }
+        };
+
+        if let Some(listener) = old_listener {
+            *listener = new_listener;
+            Ok(None)
+        }
+        else {
+            Ok(Some(new_listener))
+        }
+    }
+    else {
+        log_info!("(Client) Request was made to reset listener, but port did not change. Ignoring update.");
+        Ok(None)
+    }
 }
 
 pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
     log_info!("(Client) Starting listener...");
-    //Establish TCP listener
-    let (mut max_clients, mut listener) = match setup_listener(Ipv4Addr::new(0, 0, 0, 0)).await {
-        Ok(v) => v,
-        Err(e) => return e,
+
+    let mut port: u16 = 0;
+    let mut max_clients: usize = 0;
+    let addr = Ipv4Addr::new(0, 0, 0, 0);
+    let mut listener: TcpListener = match setup_listener(addr.clone(), &mut port, &mut max_clients, None).await {
+        Ok(v) => v.expect("It didnt give me the listener, when I expected it!"),
+        Err(e) => return e
     };
+
     log_debug!("(Client) Listener started.");
 
     let mut result_status: WorkerTaskResult = WorkerTaskResult::Ok;
@@ -125,14 +145,12 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                         log_info!("(Client) Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
                     }
                     SimpleComm::ReloadConfiguration => {
-                        (max_clients, listener) = match setup_listener(Ipv4Addr::new(0, 0, 0, 0)).await {
-                            Ok(v) => v,
-                            Err(e) => {
-                                log_error!("(Client) Unable to reload configuration due to error '{}'", &e);
-                                result_status = e;
-                                break;
-                            }
-                        };
+                        if let Err(e) = setup_listener(addr.clone(), &mut port, &mut max_clients, Some(&mut listener)).await {
+                            log_error!("(Client) Unable to reload configuration due to error '{e}'");
+                            result_status = e;
+                            break;
+                        }
+
                         log_info!("(Clients) Configuration reloaded.");
                     }
                     SimpleComm::Kill => {

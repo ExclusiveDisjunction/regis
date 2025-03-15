@@ -1,0 +1,12 @@
+[Unit]
+Description=The regisd software runs in the background, collecting metrics, and allows for remote users to connect and view analystics. 
+
+[Service]
+ExecStart=/usr/bin/regisd
+ExecReload=/usr/bin/regisc config
+Type=simple
+PIDFile=/etc/regis/regisd/pid
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

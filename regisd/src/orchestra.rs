@@ -17,13 +17,48 @@ use crate::{
 
 use common::{
     log_critical, log_debug, log_error, log_info, log_warning,
-    task_util::{DuplexTask, RestartableTask, SimplexTask, recv, shutdown},
+    task_util::{recv, send, shutdown, DuplexTask, RestartableTask, SimplexTask, StartableTask},
 };
 
 /// The amount of time between each task "poll".
 pub const TASK_CHECK_TIMEOUT: u64 = 30;
 /// The buffer size for a default channel buffer.
 pub const TASKS_DEFAULT_BUFFER: usize = 10;
+
+async fn try_send_or_restart<T, F, Fut>(handle: &mut RestartableTask<T>, func: F, buff: usize, value: T::Msg) -> bool 
+where T: StartableTask ,
+F: FnOnce(T::Arg) -> Fut + Send + 'static,
+Fut: Future<Output=T::Output> + Send + 'static {
+    if let Err(e) = send(handle, value).await {
+        let result = handle.restart(func, buff);
+        log_info!("(Orch) When sending message to task, the task was dead (Error: '{e}'). Could it be restarted? '{}'", result.is_ok());
+
+        result.is_err()
+    }
+    else {
+        true
+    }
+}
+async fn reload_configuration(orch: &mut Orchestrator) -> Result<(), ExitCode> {
+    if let Err(e) = CONFIG.open(CONFIG_PATH) {
+        log_error!("(Orch) Unable to reload configuration due to '{:?}'. Configuration will be reset to defaults.", e);
+        CONFIG.set_to_default();
+    }
+
+    let mut send_failure: bool = false;
+    send_failure &= try_send_or_restart(&mut orch.console_thread, console_entry, TASKS_DEFAULT_BUFFER, ConsoleComm::ReloadConfiguration).await;
+    send_failure &= try_send_or_restart(&mut orch.metric_thread, metrics_entry, TASKS_DEFAULT_BUFFER, SimpleComm::ReloadConfiguration).await;
+    send_failure &= try_send_or_restart(&mut orch.client_thread, client_entry, TASKS_DEFAULT_BUFFER, SimpleComm::ReloadConfiguration).await;
+    
+    if send_failure {
+        log_critical!("(Orch) Unable to send out configuration reloading messages, as some threads were dead and could not be restarted.");
+        Err(ExitCode::FAILURE)
+    }
+    else {
+        log_info!("(Orch) Configurations reloaded.");
+        Ok(())
+    }
+}
 
 pub struct Orchestrator {
     client_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
@@ -54,11 +89,24 @@ impl Orchestrator {
         // To handle SIGTERM, since this is a daemon, a separate task needs to be made
         let mut term_signal = match signal(SignalKind::terminate()) {
             Ok(v) => v,
-            Err(e) => panic!("(Orch) Unable to generate sigterm signal handler '{e}'"),
+            Err(e) => {
+                log_critical!("(Orch) Unable to generate SIGTERM signal handler '{e}'");
+                return Err(ExitCode::FAILURE);
+            }
         };
         let mut sig_int = match signal(SignalKind::interrupt()) {
             Ok(v) => v,
-            Err(e) => panic!("(Orch) Unable to generate a sigint signal handler '{e}'"),
+            Err(e) => {
+                log_critical!("(Orch) Unable to generate SIGINT signal handler '{e}'");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        let mut sig_hup = match signal(SignalKind::hangup()) {
+            Ok(v) => v,
+            Err(e) => {
+                log_critical!("(Orch) Unable to generate SIGHUP signal handler '{e}'");
+                return Err(ExitCode::FAILURE);
+            }
         };
         log_info!("(Orch) Utility tasks loaded.");
 
@@ -90,15 +138,16 @@ impl Orchestrator {
                     log_info!("(Orch) SIGINT message from OS received, shutting down threads.");
                     break;
                 }
+                _ = sig_hup.recv() => {
+                    log_info!("(Orch) SIGHUP message received from OS, reloading configuration.");
+                    reload_configuration(&mut self).await?;
+                }
                 m = recv(&mut self.console_thread) => {
                     if let Some(m) = m {
                         match m {
                             ConsoleComm::ReloadConfiguration => {
                                 log_info!("(Orch) By request of console thread, the configuration is being reloaded...");
-                                if let Err(e) = CONFIG.open(CONFIG_PATH) {
-                                    log_error!("(Orch) Unable to reload configuration due to '{:?}'. Configuration will be reset to defaults.", e);
-                                    CONFIG.set_to_default();
-                                }
+                                reload_configuration(&mut self).await?;
                             },
                             ConsoleComm::SystemShutdown => {
                                 log_info!("(Orch) By request of console thread, the system is to shutdown...");

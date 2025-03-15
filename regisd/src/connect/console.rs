@@ -56,7 +56,11 @@ pub async fn client_worker(mut conn: Receiver<ConsoleComm>, (mut source, send): 
             v = conn.recv() => { //Something from parent Console
                 match v {
                     Some(v) => match v {
-                        ConsoleComm::Poll | ConsoleComm::ReloadConfiguration | ConsoleComm::Auth => continue,
+                        ConsoleComm::Poll | ConsoleComm::ReloadConfiguration | ConsoleComm::Auth => {
+                            if v == ConsoleComm::Poll {
+                                log_info!("(Console Worker) Someone was just saying hi!");
+                            }
+                        }
                         ConsoleComm::SystemShutdown | ConsoleComm::Kill => break
                     },
                     None => return
