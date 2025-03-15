@@ -11,7 +11,7 @@ use crate::{
     config::CONFIG,
     connect::{broad::broad_entry, client::client_entry, console::console_entry},
     locations::CONFIG_PATH,
-    message::{ConsoleComm, SimpleComm, WorkerTaskResult},
+    msg::{ConsoleComm, SimpleComm, WorkerTaskResult},
     metric::metrics_entry,
 };
 

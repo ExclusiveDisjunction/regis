@@ -9,16 +9,16 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use common::{log_debug, log_error, log_info, msg::decode_request, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
-use regisd_com::{msg::ConsoleRequests, loc::{SERVER_COMM_PATH, SERVER_COMM_DIR}};
+use regisd_com::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
 
-use crate::message::{ConsoleComm, WorkerTaskResult};
+use crate::msg::{ConsoleComm, WorkerTaskResult};
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
 async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
-    match try_exists(SERVER_COMM_PATH).await {
+    match try_exists(COMM_PATH).await {
         Ok(exists) => {
             if exists {
-                remove_file(SERVER_COMM_PATH).await.map_err(|_| WorkerTaskResult::Sockets)?;
+                remove_file(COMM_PATH).await.map_err(|_| WorkerTaskResult::Sockets)?;
             }
         },
         Err(e) => {
@@ -27,11 +27,11 @@ async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
         }
     }
 
-    if create_dir_all(SERVER_COMM_DIR).await.is_err() {
+    if create_dir_all(TOTAL_DIR).await.is_err() {
         return Err(WorkerTaskResult::DoNotReboot);
     }
 
-    let listener = match UnixListener::bind(SERVER_COMM_PATH) {
+    let listener = match UnixListener::bind(COMM_PATH) {
         Ok(v) => v,
         Err(e) => {
             log_error!("(Console) Unable to open connection to server comm, '{e}'");
@@ -39,7 +39,7 @@ async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
         }
     };
 
-    if let Err(e) = fs::set_permissions(SERVER_COMM_PATH, fs::Permissions::from_mode(0o777)) {
+    if let Err(e) = fs::set_permissions(COMM_PATH, fs::Permissions::from_mode(0o777)) {
         log_error!("(Console) Unable to set permissions for the server communication, '{e}'");
         return Err(WorkerTaskResult::Sockets);
     }

@@ -1,89 +1,139 @@
-use std::collections::VecDeque;
-use std::collections::vec_deque::{Iter as VecIter, IntoIter as VecIntoIter, IterMut as VecIterMut};
+//use core::slice::{Iter as VecIter, IterMut as VecIterMut};
+//use std::vec::IntoIter as VecIntoIter;
 
-pub struct LimitedQueue<T> where {
-    data: VecDeque<T>,
-    cutoff: usize
+pub struct LimitedQueue<T> where T: Default + Clone {
+    data: Vec<T>,
+    p: usize,
+    count: usize
 }
-impl<T> LimitedQueue<T> {
-    pub fn new(cutoff: usize) -> Self {
+impl<T> LimitedQueue<T> where T: Default + Clone {
+    pub fn new(capacity: usize) -> Self {
+        if capacity == 0 {
+            panic!("The capacity cannot be zero.")
+        }
         Self {
-            data: VecDeque::new(),
-            cutoff
+            data: vec![T::default(); capacity],
+            p: 0,
+            count: 0
         }
     }
 
-    pub fn previous_inserted(&self) -> Option<&T> {
-        self.data.front()
+    pub fn capacity(&self) -> usize {
+        self.data.len()
     }
-    pub fn previous_inserted_mut(&mut self) -> Option<&mut T> {
-        self.data.front_mut()
+    pub fn len(&self) -> usize {
+        self.count
     }
-    pub fn first_inserted(&self) -> Option<&T> {
-        self.data.back()
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
     }
-    pub fn first_inserted_mut(&mut self) -> Option<&mut T> {
-        self.data.back_mut()
+    pub fn is_full(&self) -> bool {
+        self.count >= self.capacity()
+    }
+
+    pub fn front_index(&self) -> Option<usize> {
+        if self.is_empty() {
+            None
+        }
+        else if self.p == 0 || !self.is_full() {
+            Some(0)
+        }
+        else {
+            Some(self.p)
+        }
+    }
+    pub fn back_index(&self) -> Option<usize> {
+        if self.is_empty() {
+            None
+        }
+        else if self.p != 0 {
+            Some(self.p - 1)
+        }
+        else {
+            Some(self.capacity() - 1)
+        }
+    }
+
+    pub fn front(&self) -> Option<&T> {
+        self.data.get(self.front_index()?)
+    }
+    pub fn front_mut(&mut self) -> Option<&mut T> {
+        let index = self.front_index()?;
+        self.data.get_mut(index)
+    }
+    pub fn back(&self) -> Option<&T> {
+        self.data.get(self.back_index()?)
+    }
+    pub fn back_mut(&mut self) -> Option<&mut T> {
+        let index = self.back_index()?;
+        self.data.get_mut(index)
     }
 
     pub fn clear(&mut self) {
-        self.data.clear();
+        self.p = 0;
+        self.count = 0;
     }
 
     pub fn insert(&mut self, val: T) -> Option<T> where T: 'static {
-        if self.cutoff == 0 {
-            return None;
+        //We only return some value IF the capacity is not met.
+        let will_return = self.is_full();
+
+        // First set the value at the back index to be the new value.
+        let curr_at_pos: &mut T = self.data.get_mut(self.p)?;
+        let result = std::mem::replace(curr_at_pos, val);
+
+        // Update the back
+        self.p = (self.p + 1) % self.capacity();
+        if !self.is_full() {
+            self.count += 1;
         }
 
-        self.data.push_front(val);
-
-        if self.data.len() > self.cutoff {
-            self.data.pop_back()
+        if will_return {
+            Some(result)
         }
         else {
             None
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.data.len()
+    pub fn iter(&self) -> LimitedQueueIter<'_, T> {
+        LimitedQueueIter::new(&self)
     }
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
-    pub fn cutoff(&self) -> usize {
-        self.cutoff
-    }
-
-    pub fn iter(&self) -> VecIter<'_, T> {
-        self.data.iter()
-    }
-    pub fn iter_mut(&mut self) -> VecIterMut<'_, T> {
-        self.data.iter_mut()
-    }
-
     pub fn get(&self, n: usize) -> Vec<&T> {
         self.data.iter().take(n).collect()
     }
-    pub fn get_mut(&mut self, n: usize) -> Vec<&mut T> {
-        self.data.iter_mut().take(n).collect()
+}
+
+pub struct LimitedQueueIter<'a, T> where T: Default + Clone {
+    data: &'a LimitedQueue<T>,
+    p: Option<usize>,
+    b: Option<usize>
+}
+impl<'a, T> Iterator for LimitedQueueIter<'a, T> where T: Default + Clone {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let curr = self.p?;
+        let last = self.b?;
+        let next: usize = (curr + 1) % self.data.capacity();
+
+        if curr == last {
+            self.p = None
+        }
+        else {
+            self.p = Some(next)
+        }
+
+        self.data.data.get(curr)
     }
 }
-impl<T> IntoIterator for LimitedQueue<T> {
-    type Item = T;
-    type IntoIter = VecIntoIter<T>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.data.into_iter()
-    }
-}
-impl<T> From<LimitedQueue<T>> for Vec<T> {
-    fn from(value: LimitedQueue<T>) -> Self {
-        value.into_iter().collect()
-    }
-}
-impl<T> From<LimitedQueue<T>> for VecDeque<T> {
-    fn from(value: LimitedQueue<T>) -> Self {
-        value.data
+impl<'a, T> LimitedQueueIter<'a, T> where T: Default + Clone {
+    pub fn new(parent: &'a LimitedQueue<T>) -> Self {
+        Self {
+            data: parent,
+            p: parent.front_index(),
+            b: parent.back_index()
+        }
     }
 }
 
@@ -94,9 +144,16 @@ fn test_limited_queue() {
     assert_eq!(queue.insert(1), None);
     assert_eq!(queue.insert(2), None);
     assert_eq!(queue.insert(3), None);
+
+    assert_eq!(queue.front(), Some(&1));
+    assert_eq!(queue.back(), Some(&3));
+
     assert_eq!(queue.insert(4), Some(1));
     assert_eq!(queue.insert(5), Some(2));
 
-    let as_vec: Vec<i32> = queue.into();
-    assert_eq!(as_vec, vec![5, 4, 3]);
+    assert_eq!(queue.back(), Some(&5));
+    assert_eq!(queue.front(), Some(&3));
+
+    let collected: Vec<i32> = queue.iter().cloned().collect();
+    assert_eq!(collected, vec![3, 4, 5]);
 }

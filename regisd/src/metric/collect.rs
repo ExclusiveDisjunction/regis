@@ -12,7 +12,7 @@
 use std::fmt::{Debug, Display};
 use tokio::process::Command;
 
-use common::error::RangeError;
+use common::{error::RangeError, log_warning};
 use serde::{Deserialize, Serialize};
 
 /// A measure that uses binary values for storage (GiB)
@@ -327,7 +327,7 @@ pub struct NetworkMetric {
 }
 impl Metric for NetworkMetric { }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct CollectedMetrics {
     pub time: i64,
     pub memory: Option<MemorySnapshot>,
@@ -474,21 +474,27 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
     if !cfg!(target_os="linux") {
         return None;
     }
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("top -b -n 1 | grep \"%(Cpu(s)\"")
+    
+    let raw_output = Command::new("sh")
+        .args(&["-c", "top -b -n 1 | grep \"%Cpu(s)\""])
         .output()
-        .await
-        .ok()?;
+        .await;
+
+    let output = match raw_output {
+        Ok(v) => v,
+        Err(e) => {
+            log_warning!("(Metrics) Unable to collect CPU '{e}'");
+            return None;   
+        }
+    };
 
     if !output.status.success() {
         return None;
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    let without_cpu = raw.strip_prefix("%Cpu(s): ")?;
+    let without_cpu = raw.strip_prefix("%Cpu(s): ")?.trim();
     let comma_splits: Vec<&str> = without_cpu.split(',')
         .map(|x| x.trim())
         .filter(|x| !x.is_empty())
@@ -526,7 +532,7 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
 
     //The first four are supposed to be utiliziations, the remainder are to be interpreted as u16 durations.
 
-    let utils: Vec<Utilization> = parsed_values[0..3]
+    let utils: Vec<Utilization> = parsed_values[0..4]
         .iter()
         .flat_map(|x | Utilization::new(*x as u8))
         .collect();
@@ -564,7 +570,7 @@ pub async fn collect_network() -> Option<NetworkSnapshot> {
         return None;
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
     /*
 
         The format is: 
@@ -593,8 +599,8 @@ pub async fn collect_network() -> Option<NetworkSnapshot> {
 
         let name = splits[0].to_owned();
         let mtu = splits[1].to_owned();
-        let rx_raw: Vec<&str> = splits[2..5].to_vec();
-        let tx_raw: Vec<&str> = splits[6..9].to_vec();
+        let rx_raw: Vec<&str> = splits[2..6].to_vec();
+        let tx_raw: Vec<&str> = splits[6..10].to_vec();
         //The flag `splits[10]` is ignored
 
         let rx_values: Vec<u64> = rx_raw.into_iter()
@@ -627,18 +633,24 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
         return None;
     }
 
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("ps -e --no-headers | wc -l")
+    let raw_output = Command::new("sh")
+        .args(&["-c", "ps -e --no-headers | wc -l"])
         .output()
-        .await
-        .ok()?;
+        .await;
+
+    let output = match raw_output {
+            Ok(v) => v,
+            Err(e) => {
+                log_warning!("(Collection) Unable to get process count, error '{e}'");
+                return None
+            }
+        };
 
     if !output.status.success() {
         return None;
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let amount: u64 = raw.parse().ok()?;
 
     Some(

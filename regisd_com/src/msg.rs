@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 pub enum ConsoleRequests {
     Shutdown,
     Auth,
-    Config
+    Config,
+    Poll
 }
 impl MessageBasis for ConsoleRequests { }
 impl RequestMessage for ConsoleRequests { }

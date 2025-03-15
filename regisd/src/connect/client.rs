@@ -8,7 +8,7 @@ use common::task_util::{ArgSimplexTask, shutdown_explicit};
 use common::{log_error, log_info, log_warning};
 
 use crate::config::CONFIG;
-use crate::message::{SimpleComm, WorkerTaskResult};
+use crate::msg::{SimpleComm, WorkerTaskResult};
 
 async fn setup_listener(addr: Ipv4Addr) -> Result<(usize, TcpListener), WorkerTaskResult> {
     let (port, max_clients) = match CONFIG.access().access() {

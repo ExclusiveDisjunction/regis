@@ -67,7 +67,8 @@ impl From<ConsoleRequests> for ConsoleComm {
         match value {
             ConsoleRequests::Auth => Self::Auth,
             ConsoleRequests::Config => Self::ReloadConfiguration,
-            ConsoleRequests::Shutdown => Self::SystemShutdown
+            ConsoleRequests::Shutdown => Self::SystemShutdown,
+            ConsoleRequests::Poll => Self::Poll
         }
     }
 }

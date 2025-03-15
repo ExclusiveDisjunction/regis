@@ -19,7 +19,7 @@ impl Default for Configuration {
             max_hosts: 6,
             hosts_port: CLIENTS_PORT,
             broadcasts_port: BROADCAST_PORT,
-            metric_freq: 1,
+            metric_freq: 3,
         }
     }
 }

@@ -1,12 +1,13 @@
-use common::log::{logging, LoggerLevel, LoggerRedirect};
+use common::log::{LOG, LoggerLevel, LoggerRedirect};
 use common::version::Version;
 use common::{log_critical, log_info};
 use common::msg::send_request;
 use regisd_com::msg::ConsoleRequests;
 
-use regisd_com::loc::SERVER_COMM_PATH;
+use regisd_com::loc::{COMM_PATH, CONSOLE_LOG_DIR};
 
 use tokio::net::UnixStream;
+use tokio::fs::create_dir_all;
 use clap::{Parser, Subcommand};
 
 use std::process::exit;
@@ -29,7 +30,9 @@ enum Commands {
     /// Instruct the daemon to gracefully shutdown
     Shutdown,
     /// Instruct the daemon to reload its configuration file
-    Config
+    Config,
+    /// Determines if the daemon is running.
+    Poll,
 }
 
 pub async fn entry() {
@@ -48,34 +51,59 @@ pub async fn entry() {
         redirect = LoggerRedirect::default();
     }
 
-    if logging.open("run.log", level, redirect).is_err() {
+    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR).await {
+        eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
+        exit(1);
+    }
+
+    let today = chrono::Local::now();
+    let logger_path = format!("{}{:?}-run.log", CONSOLE_LOG_DIR, today);
+
+    if LOG.open(logger_path, level, redirect).is_err() {
         eprintln!("Error! Unable to start log. Exiting.");
         exit(1);     
     }
 
+    // Parse request
+    let request = match command.command {
+        Commands::Auth => ConsoleRequests::Auth,
+        Commands::Config => ConsoleRequests::Config,
+        Commands::Shutdown => ConsoleRequests::Shutdown,
+        Commands::Poll => ConsoleRequests::Poll,
+    };
+
     //Connect
     log_info!("Connecting to regisd...");
-    let mut stream = match UnixStream::connect(SERVER_COMM_PATH).await {
+    let mut stream = match UnixStream::connect(COMM_PATH).await {
         Ok(v) => v,
         Err(e) => {
-            log_critical!("Unable to connect to regisd: '{}'. Please ensure that it is loaded & running.", e);
+            if request == ConsoleRequests::Poll {
+                log_critical!("Daemon is not active, due to failure to connect to it.");
+            }
+            else {
+                log_critical!("Unable to connect to regisd: '{}'. Please ensure that it is loaded & running.", e);
+            }
             exit(3);
         }
     };
 
-   let request = match command.command {
-        Commands::Auth => ConsoleRequests::Auth,
-        Commands::Config => ConsoleRequests::Config,
-        Commands::Shutdown => ConsoleRequests::Shutdown
-    };
-
+    // Send message
     let result = send_request(request, &mut stream).await;
     
     if let Err(e) = result {
-        log_critical!("Unable to send message, reason '{e}'.");
+        if request == ConsoleRequests::Poll {
+            log_critical!("Daemon is not active, due to failure to send a message to it.");
+        }
+        else {
+            log_critical!("Unable to send message, reason '{e}'.");
+        }
         exit(1);
     }
     else {
+        if request == ConsoleRequests::Poll {
+            println!("The daemon is active.")
+        }
+
         log_info!("Regisc complete. Message sent.");
     }
 }

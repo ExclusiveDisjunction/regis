@@ -12,7 +12,7 @@ use tokio::time::interval;
 
 use std::time::Duration;
 
-use crate::{config::CONFIG, message::{SimpleComm, WorkerTaskResult}};
+use crate::{config::CONFIG, msg::{SimpleComm, WorkerTaskResult}};
 
 pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
     let mut freq = match CONFIG.access().access() {
@@ -50,8 +50,8 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                 }
             },
             _ = intv.tick() => {
-                //log_debug!("(Metrics) Started metrics collection...");
                 let metrics = collect_all_snapshots().await;
+                log_debug!("(Metrics) Inserting: '{:?}'", &metrics);
                 if !METRICS.push(metrics) {
                     log_warning!("(Metrics) Unable to insert into metrics. Resetting provider...");
                     METRICS.reset();

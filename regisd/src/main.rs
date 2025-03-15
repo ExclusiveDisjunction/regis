@@ -1,14 +1,14 @@
 pub mod config;
 pub mod connect;
 pub mod locations;
-pub mod message;
+pub mod msg;
 pub mod metric;
 pub mod orchestra;
 
 use common::log::{LOG, LoggerLevel, LoggerRedirect};
 use common::{log_debug, log_info, log_warning};
 use config::CONFIG;
-use locations::{LOG_DIR, TOTAL_DIR};
+use locations::{DAEMON_LOG_DIR, TOTAL_DIR};
 use orchestra::Orchestrator;
 
 use std::process::ExitCode;
@@ -65,12 +65,12 @@ async fn main() -> Result<(), ExitCode> {
         return Err(ExitCode::FAILURE);
     }
 
-    if let Err(e) = create_dir_all(LOG_DIR).await {
+    if let Err(e) = create_dir_all(DAEMON_LOG_DIR).await {
         eprintln!("Unable startup service. Checking of directory structure failed '{e}'.");
         return Err(ExitCode::FAILURE);
     }
 
-    let logger_path = format!("{}/{:?}-run.log", LOG_DIR, today);
+    let logger_path = format!("{}{:?}-run.log", DAEMON_LOG_DIR, today);
 
     if let Err(e) = LOG.open(logger_path, level, redirect) {
         eprintln!("Unable to start logger because '{e}'");

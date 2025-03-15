@@ -50,7 +50,10 @@ impl MetricProvider {
             .map(|x| x.insert(data))
             .is_some()
     }
-    pub fn view(&self, n: usize) -> Option<Vec<CollectedMetrics>> {
+    pub fn view(&self, _n: usize) -> Option<Vec<CollectedMetrics>> {
+        None
+       
+        /*
         self.access()
             .access()
             .map(|x| {
@@ -59,6 +62,7 @@ impl MetricProvider {
                     .cloned()
                     .collect()
             })
+        */
     }
 }
 

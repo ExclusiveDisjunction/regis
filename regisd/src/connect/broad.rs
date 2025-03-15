@@ -5,7 +5,7 @@ use tokio::select;
 use tokio::sync::mpsc::Receiver;
 
 use crate::CONFIG;
-use crate::message::{SimpleComm, WorkerTaskResult};
+use crate::msg::{SimpleComm, WorkerTaskResult};
 
 use common::{log_error, log_info};
 
