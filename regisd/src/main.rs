@@ -6,16 +6,20 @@ pub mod metric;
 pub mod orchestra;
 
 use common::log::{LOG, LoggerLevel, LoggerRedirect};
-use common::{log_debug, log_info, log_warning};
+use common::{log_critical, log_debug, log_info, log_warning};
 use config::CONFIG;
+use daemonize::Daemonize;
 use loc::{DAEMON_LOG_DIR, TOTAL_DIR};
 use orchestra::Orchestrator;
+use regisd_com::loc::{PID_PATH, STD_ERR_PATH, STD_OUT_PATH};
+use tokio::runtime::Runtime;
 
 use std::process::ExitCode;
+use std::fs::File;
 
 use clap::Parser;
 
-use tokio::fs::create_dir_all;
+use std::fs::create_dir_all;
 
 #[derive(Parser, Debug)]
 struct Options {
@@ -40,8 +44,31 @@ struct Options {
     stderr: Option<String>
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExitCode> {
+async fn start_orch() -> Result<(), ExitCode> {
+    log_info!("Init complete, handling tasks to orchestrator");
+    let orch = Orchestrator::initialize();
+
+    let result = orch.run().await;
+    CONFIG.save(loc::CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
+    
+    result
+}
+
+fn begin_runtime() -> Result<(), ExitCode> {
+    let rt = match Runtime::new() {
+        Ok(v) => v,
+        Err(e) => {
+            log_critical!("Unable to start tokio runtime!");
+            return Err(ExitCode::FAILURE)
+        }
+    };
+
+    rt.block_on( async {
+        start_orch().await
+    })
+}
+
+fn main() -> Result<(), ExitCode> {
     let cli = Options::parse();
 
     let level: LoggerLevel;
@@ -60,12 +87,12 @@ async fn main() -> Result<(), ExitCode> {
     }
 
     let today = chrono::Local::now();
-    if let Err(e) = create_dir_all(TOTAL_DIR).await {
+    if let Err(e) = create_dir_all(TOTAL_DIR) {
         eprintln!("Unable startup service. Checking of directory structure failed '{e}'.");
         return Err(ExitCode::FAILURE);
     }
 
-    if let Err(e) = create_dir_all(DAEMON_LOG_DIR).await {
+    if let Err(e) = create_dir_all(DAEMON_LOG_DIR) {
         eprintln!("Unable startup service. Checking of directory structure failed '{e}'.");
         return Err(ExitCode::FAILURE);
     }
@@ -89,11 +116,60 @@ async fn main() -> Result<(), ExitCode> {
     }
     log_info!("Configuration loaded.");
 
-    log_info!("Check complete, handling tasks to orchestrator");
-    let orch = Orchestrator::initialize();
+    if cli.daemon {
+        let stdout_path = if let Some(p) = cli.stdout.as_deref() {
+            p
+        }
+        else {
+            STD_OUT_PATH
+        };
 
-    let result = orch.run().await;
-    CONFIG.save(loc::CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
-    
-    result
+        let stderr_path = if let Some(p) = cli.stderr.as_deref() {
+            p
+        }
+        else {
+            STD_ERR_PATH
+        };
+
+        let stdout = match File::create(stdout_path) {
+            Ok(f) => f,
+            Err(e) => {
+                log_critical!("Unable to open stdout file at path '{stdout_path}' because of '{e}'");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        let stderr = match File::create(stderr_path) {
+            Ok(f) => f,
+            Err(e) => {
+                log_critical!("Unable to open stderr file at path '{stderr_path}' because of '{e}'");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+
+        log_info!("Starting regisd as a daemon...");
+
+        let daemonize = Daemonize::new()
+            .pid_file(PID_PATH)
+            .stdout(stdout)
+            .stderr(stderr)
+            .chown_pid_file(true)
+            .working_directory("/");
+
+        match daemonize.start() {
+            Ok(_) => {
+                log_info!("Daemon loaded. Running process.");
+                let result = begin_runtime();
+                log_info!("Daemon finished.");
+
+                result
+            }
+            Err(e) => {
+                log_critical!("Unable to start daemon '{e}.");
+                Err(ExitCode::FAILURE)
+            }
+        }
+    }
+    else {
+        begin_runtime()
+    }
 }
