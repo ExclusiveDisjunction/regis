@@ -1,10 +1,10 @@
 [package]
-name = "client"
+name = "regisg"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "regis-client"
+name = "regisg"
 path = "src/main.rs"
 
 [dependencies]

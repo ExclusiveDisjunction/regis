@@ -58,7 +58,7 @@ fn begin_runtime() -> Result<(), ExitCode> {
     let rt = match Runtime::new() {
         Ok(v) => v,
         Err(e) => {
-            log_critical!("Unable to start tokio runtime!");
+            log_critical!("Unable to start tokio runtime '{e}'");
             return Err(ExitCode::FAILURE)
         }
     };
