@@ -237,6 +237,7 @@ pub async fn client_worker(mut conn: Receiver<WorkerComm>, mut stream: TcpStream
                     }
                 };
     
+                log_debug!("(Client worker) Sending message...");
                 if let Err(e) = send_response_async(response, &mut stream).await {
                     log_error!("(Client worker) Unable to send message to client '{e}'.");
                     return;

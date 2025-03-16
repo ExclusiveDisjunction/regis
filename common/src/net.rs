@@ -8,6 +8,8 @@ use tokio::fs::File as AsyncFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::pin;
 
+use crate::log_debug;
+
 pub const NET_BUFF_SIZE: usize = 4096;
 
 pub fn read_file_contents<P>(path: P) -> Result<String, std::io::Error> where P: AsRef<Path> {
@@ -31,18 +33,24 @@ pub fn send_buffer<T>(src: &[u8], sock: &mut T) -> Result<(), std::io::Error> wh
 }
 pub fn receive_buffer<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result<(), std::io::Error> where T: Read {
     dest.clear();
-    let mut len_buff = [0u8, 4];
-    sock.read_exact(&mut len_buff)?;
+
+    let mut len_buff = [0u8; 4];
     let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
+    sock.read_exact(&mut len_buff)?;
+
+    let len = u32::from_be_bytes(len_buff) as usize;
+    log_debug!("(Tool) Decoding {len} bytes from stream.");
 
     loop {
         let bytes_read = sock.read(temp_buffer.deref_mut())?;
 
-        if bytes_read == 0 {
+        dest.extend_from_slice(&temp_buffer[..bytes_read]);
+
+        log_debug!("(Tool) Got {bytes_read} from stream.");
+        if bytes_read == 0 || dest.len() == len {
             break; //Connection closed or no more data
         }
 
-        dest.extend_from_slice(&temp_buffer[..bytes_read]);
     }
 
     Ok(())
@@ -75,18 +83,24 @@ pub async fn receive_buffer_async<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result
 
     pin!(sock);
 
-    let mut len_buff = [0u8, 4];
+    let mut len_buff = [0u8; 4];
     let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
     sock.read_exact(&mut len_buff).await?;
+
+    let len = u32::from_be_bytes(len_buff) as usize;
+    log_debug!("(Tool) Decoding {len} bytes from stream.");
+
 
     loop {
         let bytes_read = sock.read(temp_buffer.deref_mut()).await?;
 
-        if bytes_read == 0 {
+        dest.extend_from_slice(&temp_buffer[..bytes_read]);
+
+        log_debug!("(Tool) Got {bytes_read} from stream.");
+        if bytes_read == 0 || dest.len() == len {
             break; //Connection closed or no more data
         }
 
-        dest.extend_from_slice(&temp_buffer[..bytes_read]);
     }
 
     Ok(())
