@@ -54,7 +54,11 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
             }
 
             let mut iter = cols.into_iter();
-            let name = iter.next()?;
+            let mut name = iter.next()?;
+            name = match name.strip_suffix(':') {
+                Some(n) => n,
+                None => name
+            };
 
             let mut converted = iter
                 .map(|x| x.parse::<u64>().ok())
@@ -136,7 +140,13 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
                 BinaryNumber::parse(parsed)
             })
             .collect();
-        let capacity = Utilization::new(splits[4].parse::<u8>().unwrap_or(0)).ok()?;
+
+        let mut raw_capacity = splits[4];
+        raw_capacity = match raw_capacity.strip_suffix('%') {
+            Some(v) => v.trim(),
+            None => raw_capacity
+        };
+        let capacity = Utilization::new(raw_capacity.parse::<u8>().unwrap_or(0)).ok()?;
         let mounted = splits[5].to_owned();
 
         result.push(

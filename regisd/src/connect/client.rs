@@ -71,7 +71,7 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
     let mut port: u16 = 0;
     let mut max_clients: usize = 0;
     let addr = Ipv4Addr::new(0, 0, 0, 0);
-    let mut listener: TcpListener = match setup_listener(addr.clone(), &mut port, &mut max_clients, None).await {
+    let mut listener: TcpListener = match setup_listener(addr, &mut port, &mut max_clients, None).await {
         Ok(v) => v.expect("It didnt give me the listener, when I expected it!"),
         Err(e) => return e
     };
@@ -147,7 +147,7 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                         log_info!("(Client) Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
                     }
                     SimpleComm::ReloadConfiguration => {
-                        if let Err(e) = setup_listener(addr.clone(), &mut port, &mut max_clients, Some(&mut listener)).await {
+                        if let Err(e) = setup_listener(addr, &mut port, &mut max_clients, Some(&mut listener)).await {
                             log_error!("(Client) Unable to reload configuration due to error '{e}'");
                             result_status = e;
                             break;

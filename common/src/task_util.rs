@@ -7,7 +7,7 @@ use tokio::{
     }
 };
 
-use crate::{log_debug, log_warning, log_error, log_critical};
+use crate::{log_warning, log_error, log_critical};
 
 /// A specific object that has a "kill" message value, such that if passed into a thread that listens to this message kind, it will stop executing.
 pub trait KillMessage : Send + Sized{

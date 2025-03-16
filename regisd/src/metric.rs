@@ -5,7 +5,7 @@ pub mod storage;
 use collect::collect_all_snapshots;
 use io::METRICS;
 
-use common::{log_info, log_warning, log_debug, log_error};
+use common::{log_info, log_warning, log_error};
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::interval;
