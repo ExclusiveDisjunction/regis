@@ -7,34 +7,34 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'regisd'",
+            "name": "Debug executable 'regis'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=regisd",
-                    "--package=regisd"
+                    "--bin=regis",
+                    "--package=regis"
                 ],
                 "filter": {
-                    "name": "regisd",
+                    "name": "regis",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["--no-gui"],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'regisd'",
+            "name": "Debug unit tests in executable 'regis'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=regisd",
-                    "--package=regisd"
+                    "--bin=regis",
+                    "--package=regis"
                 ],
                 "filter": {
-                    "name": "regisd",
+                    "name": "regis",
                     "kind": "bin"
                 }
             },
