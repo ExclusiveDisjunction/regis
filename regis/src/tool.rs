@@ -16,6 +16,8 @@ pub fn connect(host: IpAddr) -> Result<TcpStream, std::io::Error> {
         }
     };
 
+    println!("Attempting to connect to {} on port {}", &host, port);
+
     let stream = TcpStream::connect(SocketAddr::from( (host, port) ))?;
 
     Ok(stream)
