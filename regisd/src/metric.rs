@@ -62,7 +62,7 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                     METRICS.reset();
                 }
 
-                log_debug!("(Metrics) Metrics inserted");
+                //log_debug!("(Metrics) Metrics inserted");
             }
         }
     }

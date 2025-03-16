@@ -20,6 +20,8 @@ pub fn read_file_contents<P>(path: P) -> Result<String, std::io::Error> where P:
 
 pub fn send_buffer<T>(src: &[u8], sock: &mut T) -> Result<(), std::io::Error> where T: Write {
     let mut total_written = 0;
+    let length = (src.len() as u32).to_be_bytes();
+    sock.write_all(&length)?;
     while total_written < src.len() {
         let written = sock.write(&src[total_written..])?;
         total_written += written;
@@ -29,6 +31,8 @@ pub fn send_buffer<T>(src: &[u8], sock: &mut T) -> Result<(), std::io::Error> wh
 }
 pub fn receive_buffer<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result<(), std::io::Error> where T: Read {
     dest.clear();
+    let mut len_buff = [0u8, 4];
+    sock.read_exact(&mut len_buff)?;
     let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
 
     loop {
@@ -54,6 +58,10 @@ pub async fn read_file_contents_async<P>(path: P) -> Result<String, std::io::Err
 
 pub async fn send_buffer_async<T>(src: &[u8], sock: &mut T) -> Result<(), std::io::Error> where T: AsyncWriteExt + Unpin {
     let mut total_written = 0;
+
+    let length = (src.len() as u32).to_be_bytes();
+    sock.write_all(&length).await?;
+
     pin!(sock);
     while total_written < src.len() {
         let written = sock.write(&src[total_written..]).await?;
@@ -64,9 +72,12 @@ pub async fn send_buffer_async<T>(src: &[u8], sock: &mut T) -> Result<(), std::i
 }
 pub async fn receive_buffer_async<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result<(), std::io::Error> where T: AsyncReadExt + Unpin {
     dest.clear();
-    let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
 
     pin!(sock);
+
+    let mut len_buff = [0u8, 4];
+    let mut temp_buffer = Box::new([0; NET_BUFF_SIZE]);
+    sock.read_exact(&mut len_buff).await?;
 
     loop {
         let bytes_read = sock.read(temp_buffer.deref_mut()).await?;

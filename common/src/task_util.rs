@@ -57,7 +57,7 @@ impl RestartStatus {
     /// Writes to the logger depending on the result of the poll. Note that 'Ok' values are only printed in debug mode.
     pub fn log_event(&self, name: &str) -> bool {
         match self {
-            Self::Ok => log_debug!("Poll of thread '{}' was ok", name),
+            Self::Ok => (), //log_debug!("Poll of thread '{}' was ok", name),
             Self::WasDead => log_warning!("Poll of thread '{}' determined it was dead, but was successfully restarted.", name),
             Self::TriesExceeded => log_critical!("Poll of thread '{}' determined it was dead, but cannot be restarted.", name),
             Self::Argument => log_error!("Poll of thread '{}' determined that an argument passed into it was invalid, and could not be restarted.", name)
