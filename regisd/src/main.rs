@@ -50,7 +50,7 @@ async fn start_orch() -> Result<(), ExitCode> {
     let orch = Orchestrator::initialize();
 
     let result = orch.run().await;
-    CONFIG.save(loc::CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
+    CONFIG.save(loc::DAEMON_CONFIG_PATH).map_err(|_| ExitCode::FAILURE)?;
     
     result
 }
@@ -126,7 +126,7 @@ fn main() -> Result<(), ExitCode> {
     log_info!("Launching regisd...");
 
     log_debug!("Loading configuration");
-    if let Err(e) = CONFIG.open(loc::CONFIG_PATH) {
+    if let Err(e) = CONFIG.open(loc::DAEMON_CONFIG_PATH) {
         log_warning!(
             "Unable to load configuration, creating default for this initalization. Error: '{:?}'",
             e

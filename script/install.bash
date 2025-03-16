@@ -1,6 +1,6 @@
 #! /bin/bash
 
-names=("regisd" "regisc" "regisg");
+names=("regisd" "regisc" "regis");
 source_dir="./compiled/"
 dest_dir="/usr/bin/"
 

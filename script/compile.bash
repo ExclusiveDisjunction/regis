@@ -1,6 +1,6 @@
 #! /bin/bash
 
-names=("regisc" "regisd" "regisg")
+names=("regisc" "regisd" "regis")
 dest="./compiled/"
 
 mkdir -p $dest

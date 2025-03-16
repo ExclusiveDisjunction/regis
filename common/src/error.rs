@@ -2,6 +2,8 @@ use std::fmt::{Debug, Display};
 
 use serde_json::Error as JsonError;
 
+// Way to improve: Implement std::err for all of these things.
+
 #[derive(PartialEq, Eq, Clone)]
 pub struct ArgumentMissingError {
     arg: String

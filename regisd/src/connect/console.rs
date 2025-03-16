@@ -8,7 +8,7 @@ use tokio::{
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use common::{log_debug, log_error, log_info, msg::decode_request, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
+use common::{log_debug, log_error, log_info, msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
 use regisd_com::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
@@ -66,7 +66,7 @@ pub async fn client_worker(mut conn: Receiver<ConsoleComm>, (mut source, send): 
                     None => return
                 }
             }
-            raw_msg = decode_request(&mut source) => {
+            raw_msg = decode_request_async(&mut source) => {
                 let msg: ConsoleRequests = match raw_msg {
                     Ok(v) => v,
                     Err(e) => {

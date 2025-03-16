@@ -1,13 +1,16 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
+use common::msg::{decode_request_async, send_response_async, Acknoledgement, HttpCode, MetricsResponse, RequestMessages, ResponseMessages, ServerStatusResponse};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
 
 use common::task_util::{poll, shutdown_tasks, ArgSimplexTask, KillMessage, PollableMessage, TaskBasis};
-use common::{log_error, log_info, log_debug};
+use common::{log_debug, log_error, log_info, log_warning};
 
 use crate::config::CONFIG;
+use crate::metric::collect::collect_all_snapshots;
+use crate::metric::io::METRICS;
 use crate::msg::{SimpleComm, WorkerTaskResult};
 
 pub enum WorkerComm {
@@ -77,7 +80,7 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
 
     let mut result_status: WorkerTaskResult = WorkerTaskResult::Ok;
 
-    let mut active: Vec<ArgSimplexTask<WorkerComm, (), (TcpStream, SocketAddr)>> = vec![];
+    let mut active: Vec<ArgSimplexTask<WorkerComm, (), TcpStream>> = vec![];
     loop {
         select! {
             conn = listener.accept() => {
@@ -90,7 +93,6 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
                     }
                 };
 
-                log_info!("Got connection from '{}'", &conn.1);
                 if active.len() >= max_clients {
                     //Send message stating that the network is busy.
                     log_info!("(Clients) Closing connection to '{}' because the max hosts has been reached.", &conn.1);
@@ -100,7 +102,7 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
 
                 log_info!("(Clients) started connection from '{}'", &conn.1);
                 active.push(
-                    ArgSimplexTask::start(client_worker, 10, conn)
+                    ArgSimplexTask::start(client_worker, 10, conn.0)
                 );
             },
             m = recv.recv() => {
@@ -181,4 +183,65 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
     result_status
 }
 
-pub async fn client_worker(_conn: Receiver<WorkerComm>, (_stream, _source): (TcpStream, SocketAddr)) {}
+pub async fn client_worker(mut conn: Receiver<WorkerComm>, mut stream: TcpStream) {
+    loop {
+        select! {
+            v = conn.recv() => {
+                match v {
+                    Some(v) => match v {
+                        WorkerComm::Poll => {
+                            log_debug!("(Client worker) Poll requested.");
+                            continue;
+                        }
+                        WorkerComm::Kill => {
+                            log_debug!("(Client worker) Got kill message.");
+                            break;
+                        }
+                    }
+                    None => {
+                        log_warning!("(Client worker) Unable to receive message from client thread. Exiting");
+                        return;
+                    }
+                }
+            },
+            raw_msg = decode_request_async(&mut stream) => {
+                let msg: RequestMessages = match raw_msg {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log_error!("(Client worker) Unable to decode message from bound client '{e}'. Exiting.");
+                        return;
+                    }
+                };
+    
+                log_debug!("(Client worker) Serving request '{:?}'", &msg);
+    
+                let response: ResponseMessages = match msg {
+                    RequestMessages::Ack(_) => Acknoledgement::new(HttpCode::Ok, Some("go off king".to_string())).into(),
+                    RequestMessages::Metrics(amount) => {
+                        let collected = METRICS.view(amount);
+    
+                        let to_send = if let Some(c) = collected {
+                            c
+                        }
+                        else {
+                            log_warning!("(Client worker) Unable to retrieve metrics. Resetting metrics.");
+                            METRICS.reset();
+                            vec![]
+                        };
+    
+                        MetricsResponse { info: to_send }.into()
+                    },
+                    RequestMessages::Status => {
+                        let metrics = collect_all_snapshots().await;
+                        ServerStatusResponse { info: metrics }.into()
+                    }
+                };
+    
+                if let Err(e) = send_response_async(response, &mut stream).await {
+                    log_error!("(Client worker) Unable to send message to client '{e}'.");
+                    return;
+                }
+            }
+        }
+    }
+}

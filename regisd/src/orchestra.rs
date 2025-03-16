@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use crate::{
     config::CONFIG,
     connect::{client::client_entry, console::console_entry},
-    loc::CONFIG_PATH,
+    loc::DAEMON_CONFIG_PATH,
     msg::{ConsoleComm, SimpleComm, WorkerTaskResult},
     metric::metrics_entry,
 };
@@ -40,7 +40,7 @@ Fut: Future<Output=T::Output> + Send + 'static {
     }
 }
 async fn reload_configuration(orch: &mut Orchestrator) -> Result<(), ExitCode> {
-    if let Err(e) = CONFIG.open(CONFIG_PATH) {
+    if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
         log_error!("(Orch) Unable to reload configuration due to '{:?}'. Configuration will be reset to defaults.", e);
         CONFIG.set_to_default();
     }
