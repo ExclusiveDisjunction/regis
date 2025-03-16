@@ -39,18 +39,15 @@ pub fn receive_buffer<T>(dest: &mut Vec<u8>, sock: &mut T) -> Result<(), std::io
     sock.read_exact(&mut len_buff)?;
 
     let len = u32::from_be_bytes(len_buff) as usize;
-    log_debug!("(Tool) Decoding {len} bytes from stream.");
 
     loop {
         let bytes_read = sock.read(temp_buffer.deref_mut())?;
 
         dest.extend_from_slice(&temp_buffer[..bytes_read]);
 
-        log_debug!("(Tool) Got {bytes_read} from stream.");
         if bytes_read == 0 || dest.len() == len {
             break; //Connection closed or no more data
         }
-
     }
 
     Ok(())

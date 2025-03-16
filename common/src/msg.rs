@@ -104,7 +104,11 @@ impl MessageBasis for ServerStatusResponse {}
 impl ResponseMessage for ServerStatusResponse {} 
 impl Display for ServerStatusResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.info.fmt(f)
+        write!(
+            f,
+            "{}",
+            self.info.pretty_print(0, None)
+        )
     }
 }
 
@@ -115,7 +119,8 @@ pub struct MetricsResponse {
 impl Display for MetricsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let each_metric: Vec<String> = self.info.iter()
-            .map(|x| x.pretty_print(0))
+        .enumerate()
+            .map(|(i, x)| x.pretty_print(0, Some(i+1)))
             .collect();
 
         let joined = each_metric.join("\n");

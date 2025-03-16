@@ -1,4 +1,4 @@
-use std::{fmt::{Debug, Display}, io::empty};
+use std::fmt::{Debug, Display};
 use serde::{Serialize, Deserialize};
 
 use crate::error::RangeError;
@@ -122,9 +122,9 @@ impl Debug for BinaryNumber {
 impl Display for BinaryNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.amount == 1.0f64 {
-            write!(f, "{} {}", self.amount, self.bracket)
+            write!(f, "{:.3} {}", self.amount, self.bracket)
         } else {
-            write!(f, "{} {}s", self.amount, self.bracket)
+            write!(f, "{:.3} {}s", self.amount, self.bracket)
         }
     }
 }
@@ -191,7 +191,7 @@ impl Display for Utilization {
 }
 
 pub trait PrettyPrinter {
-    fn pretty_print(&self, tabs: u8) -> String;
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String;
 }
 
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
@@ -222,11 +222,12 @@ where
     }
 }
 impl<T> PrettyPrinter for Snapshot<T> where T: Metric + PrettyPrinter {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, _index: Option<usize>) -> String {
         let mut result = String::new();
-        for metric in &self.metrics {
-            result += &metric.pretty_print(tabs);
+        for (i, metric) in self.metrics.iter().enumerate(){
+            result += &metric.pretty_print(tabs, Some(i+1));
             result.push('\n');
+            result.push('\n')
 
         }
 
@@ -251,15 +252,24 @@ pub struct MemoryMetric {
 }
 impl Metric for MemoryMetric {}
 impl PrettyPrinter for MemoryMetric {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs = "\t".repeat(tabs as usize);
         let tabs_ref = &tabs;
 
-        if let (Some(shared), Some(buff), Some(ava)) = (self.shared.as_ref(), self.buff.as_ref(), self.available.as_ref()) {
-            format!("{tabs_ref}Name: {}\n{tabs_ref}Used: {}/{} ({} free)\n{tabs_ref}Shared: {}\n{tabs_ref}Buffer: {}\n{tabs_ref}Available: {}", &self.name, &self.used, &self.total, &self.free, shared, buff, ava)
+        let header = if let Some(i) = index {
+            format!("{}) ", i)
         }
         else {
-            format!("{tabs_ref}Name: {}\n{tabs_ref}Used: {}/{} ({} free)", &self.name, &self.used, &self.total, &self.free)
+            String::new()
+        };
+
+        let first_part = format!("{tabs_ref}{header}Name: '{}'\n{tabs_ref}Used: {}/{} ({} free)", &self.name, &self.used, &self.total, &self.free);
+
+        if let (Some(shared), Some(buff), Some(ava)) = (self.shared.as_ref(), self.buff.as_ref(), self.available.as_ref()) {
+            format!("{first_part}\n{tabs_ref}Shared: {}\n{tabs_ref}Buffer: {}\n{tabs_ref}Available: {}", shared, buff, ava)
+        }
+        else {
+            first_part
         }
     }
 }
@@ -282,11 +292,18 @@ pub struct StorageMetric {
 }
 impl Metric for StorageMetric {}
 impl PrettyPrinter for StorageMetric {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs = "\t".repeat(tabs as usize);
         let tabs_ref = &tabs;
 
-        format!("{tabs_ref}Filesystem '{}' mounted at '{}'\n{tabs_ref}Used/Total: {}/{} ({} or {} free)", &self.system, &self.mount, &self.used, &self.size, &self.availiable, &self.capacity)
+        let header = if let Some(i) = index {
+            format!("{}) ", i)
+        }
+        else {
+            String::new()
+        };
+
+        format!("{tabs_ref}{header}Filesystem '{}' mounted at '{}'\n{tabs_ref}Used/Total: {}/{} ({} or {} free)", &self.system, &self.mount, &self.used, &self.size, &self.availiable, &self.capacity)
     }
 }
 
@@ -312,11 +329,18 @@ pub struct CpuMetric {
 }
 impl Metric for CpuMetric {}
 impl PrettyPrinter for CpuMetric {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs = "\t".repeat(tabs as usize);
         let tabs_ref = &tabs;
 
-        format!("{tabs_ref}Utilization: {} user, {} system, {} priviledged ({} idle)\n{tabs_ref}IO Wait: {}s\n{tabs_ref}Time spent on interupts: {}s hardware, {}s software\n{tabs_ref}Stolen time: {}", &self.user, &self.system, &self.nice, &self.idle, &self.waiting, &self.h_interupts, &self.s_interupts, &self.steal)
+        let header = if let Some(i) = index {
+            format!("{}) ", i)
+        }
+        else {
+            String::new()
+        };
+
+        format!("{tabs_ref}{header}Utilization: {} user, {} system, {} priviledged ({} idle)\n{tabs_ref}IO Wait: {}s\n{tabs_ref}Time spent on interupts: {}s hardware, {}s software\n{tabs_ref}Stolen time: {}s", &self.user, &self.system, &self.nice, &self.idle, &self.waiting, &self.h_interupts, &self.s_interupts, &self.steal)
     }
 }
 
@@ -328,8 +352,8 @@ pub struct ProcessCount {
 }
 impl Metric for ProcessCount {}
 impl PrettyPrinter for ProcessCount {
-    fn pretty_print(&self, tabs: u8) -> String {
-        format!("{}Process Running: {}", "\t".repeat(tabs as usize), &self.count)
+    fn pretty_print(&self, tabs: u8, _index: Option<usize>) -> String {
+        format!("{}Processes Running: {}", "\t".repeat(tabs as usize), &self.count)
     }
 }
 
@@ -384,11 +408,18 @@ pub struct NetworkMetric {
 }
 impl Metric for NetworkMetric { }
 impl PrettyPrinter for NetworkMetric {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs_string = "\t".repeat(tabs as usize);
         let tabs_ref = &tabs_string;
 
-        format!("{tabs_ref}Link Name: {}\n{tabs_ref}MTU: {}\n{tabs_ref}Receiving: {}\n{tabs_ref}Sending: {}", &self.name, &self.mtu, &self.rx, &self.tx)
+        let header = if let Some(i) = index {
+            format!("{}) ", i)
+        }
+        else {
+            String::new()
+        };
+
+        format!("{tabs_ref}{header}Link Name: {}\n{tabs_ref}MTU: {}\n{tabs_ref}Receiving: {}\n{tabs_ref}Sending: {}", &self.name, &self.mtu, &self.rx, &self.tx)
     }
 }
 
@@ -402,7 +433,7 @@ pub struct CollectedMetrics {
     pub proc_count: Option<ProcessCount>
 }
 impl PrettyPrinter for CollectedMetrics {
-    fn pretty_print(&self, tabs: u8) -> String {
+    fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs_string = "\t".repeat(tabs as usize);
         let tabs_ref = &tabs_string;
         let tabs_string_one = "\t".repeat((tabs + 1) as usize);
@@ -410,13 +441,20 @@ impl PrettyPrinter for CollectedMetrics {
 
         let time = chrono::DateTime::from_timestamp(self.time, 0).map(|x| x.to_string()).unwrap_or("(Unknown Date/Time)".to_string());
 
-        let cpu = self.cpu.as_ref().map(|x| x.pretty_print(tabs+1)).unwrap_or(empty_data.clone());
-        let memory = self.memory.as_ref().map(|x| x.pretty_print(tabs + 1)).unwrap_or(empty_data.clone());
-        let storage = self.storage.as_ref().map(|x| x.pretty_print(tabs + 1)).unwrap_or(empty_data.clone());
-        let network = self.network.as_ref().map(|x| x.pretty_print(tabs + 1)).unwrap_or(empty_data.clone());
-        let proc_count = self.proc_count.as_ref().map(|x| x.pretty_print(tabs + 1)).unwrap_or(empty_data.clone());
+        let cpu = self.cpu.as_ref().map(|x| x.pretty_print(tabs+1, None)).unwrap_or(empty_data.clone());
+        let memory = self.memory.as_ref().map(|x| x.pretty_print(tabs + 1, None)).unwrap_or(empty_data.clone());
+        let storage = self.storage.as_ref().map(|x| x.pretty_print(tabs + 1, None)).unwrap_or(empty_data.clone());
+        let network = self.network.as_ref().map(|x| x.pretty_print(tabs + 1, None)).unwrap_or(empty_data.clone());
+        let proc_count = self.proc_count.as_ref().map(|x| x.pretty_print(tabs, None)).unwrap_or(empty_data.clone());
+
+        let header = if let Some(i) = index {
+            format!("{}) ", i)
+        }
+        else {
+            String::new()
+        };
         
-        format!("{tabs_ref}Metrics at {time}:{tabs_ref}  CPU:\n{cpu}\n{tabs_ref}   Memory:\n{memory}\n{tabs_ref}   Storage:\n{storage}\n{tabs_ref}\n{tabs_ref}   Network:\n{network}\n\n{proc_count}")
+        format!("{tabs_ref}{header}Metrics at {time}:{tabs_ref}\n   CPU:\n{cpu}\n\n\n{tabs_ref}   Memory:\n{memory}\n{tabs_ref}   Storage:\n{storage}\n{tabs_ref}   Network:\n{network}\n   {proc_count}")
     }
 }
 

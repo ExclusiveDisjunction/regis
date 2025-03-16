@@ -1,11 +1,11 @@
 use std::net::{IpAddr, TcpStream};
 use std::process::ExitCode;
 
-use std::io::{stdin, stdout, Read, Stdin, Stdout, Write};
+use std::io::{stdin, stdout, Stdin, Stdout, Write};
 use std::str::FromStr;
 
 use common::msg::{decode_response, send_request, RequestMessages, ResponseMessages};
-use common::{log_critical, log_debug, log_error, log_info, log_warning};
+use common::{log_critical, log_debug, log_error};
 use common::error::FormattingError;
 
 use crate::config::{KnownHost, CONFIG};
@@ -59,6 +59,9 @@ impl FromStr for Commands {
 
             Ok(Self::Metrics { amount: number })
         }
+        else if lower == "h" || lower == "help" {
+            Ok(Self::Help)
+        }
         else {
             Err(FormattingError::new(&lower, "could not be constructed into a valid command"))
         }
@@ -100,7 +103,7 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
             for (i, host) in hosts.iter().enumerate() {
                 println!("({}) - {}", i + 1, host);
             }
-            println!("");
+            println!();
 
             let raw_index = prompt("Index: ", stdout, stdin).to_lowercase();
             if raw_index == "q" {
@@ -123,7 +126,7 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
                 continue;
             }
 
-            host = hosts[index - 1].addr().clone();
+            host = *hosts[index - 1].addr();
             break;
         }
     }
@@ -153,7 +156,7 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
             log_debug!("Attempting to insert into known hosts.");
             let host_name = prompt("Please enter the host's name: ", stdout, stdin);
             
-            let to_insert = KnownHost::new(host_name, host.clone());
+            let to_insert = KnownHost::new(host_name, host);
             let mut lock = CONFIG.access_mut();
             match lock.access() {
                 Some(v) => v.hosts.push(to_insert),

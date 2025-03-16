@@ -2,7 +2,7 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 
-use common::{log_info, log_debug, log_critical};
+use common::log_critical;
 pub use common::msg::{send_message, send_request, send_response, decode_message, decode_request, decode_response, Acknoledgement, RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
 
 use crate::config::CONFIG;
