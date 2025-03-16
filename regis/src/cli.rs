@@ -5,7 +5,7 @@ use std::io::{stdin, stdout, Read, Stdin, Stdout, Write};
 use std::str::FromStr;
 
 use common::msg::{decode_response, send_request, RequestMessages, ResponseMessages};
-use common::{log_debug, log_error, log_info, log_warning};
+use common::{log_critical, log_debug, log_error, log_info, log_warning};
 use common::error::FormattingError;
 
 use crate::config::{KnownHost, CONFIG};
@@ -170,7 +170,13 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
         }
     }
 
-    tool_connect(host).map_err(|_| ExitCode::from(IO_ERR_EXIT))
+    match tool_connect(host) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            log_critical!("Unable to connect: '{e}'");
+            Err(ExitCode::from(IO_ERR_EXIT))
+        }
+    }
 }
 
 pub fn cli_entry() -> Result<(), ExitCode> {    
