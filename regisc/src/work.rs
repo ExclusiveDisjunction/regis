@@ -1,7 +1,7 @@
 use common::log::{LOG, LoggerLevel, LoggerRedirect};
 use common::version::Version;
 use common::{log_critical, log_info};
-use common::msg::send_request;
+use common::msg::send_request_async;
 use regisd_com::msg::ConsoleRequests;
 
 use regisd_com::loc::{COMM_PATH, CONSOLE_LOG_DIR};
@@ -88,7 +88,7 @@ pub async fn entry() {
     };
 
     // Send message
-    let result = send_request(request, &mut stream).await;
+    let result = send_request_async(request, &mut stream).await;
     
     if let Err(e) = result {
         if request == ConsoleRequests::Poll {
