@@ -1,30 +1,24 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::net::{IpAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpStream};
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
-use common::loc::CLIENTS_PORT;
-use common::metric::CollectedMetrics;
-use common::msg::{decode_response, send_message, RequestMessages, ResponseMessages};
-use glib::timeout_add_seconds;
-use gtk4::ffi::GtkGrid;
-use gtk4::{prelude::*, DialogFlags, DrawingArea, Entry, ListBox, MessageDialog, ScrolledWindow};
+use gtk4::{prelude::*, DialogFlags, Entry, MessageDialog, ScrolledWindow};
 use gtk4::{Application, ApplicationWindow, Button, Label, Box as GtkBox, Orientation};
 
 use common::log_error;
-
-use crate::config::{KnownHost, CONFIG};
-use crate::err::{TOKIO_ERR_EXIT, WEIRD_ERR_EXIT};
-use crate::tool::{SummaryEntry, SUMMARY};
-
-use lazy_static::lazy_static;
 use common::lock::{MutexProvider, OptionMutexProvider};
-
+use common::loc::CLIENTS_PORT;
+use common::metric::CollectedMetrics;
+use common::msg::{decode_response, send_message, RequestMessages, ResponseMessages};
 use common::msg::{SendError, DecodeError, send_request};
 use common::metric::{Utilization, BinaryNumber, BinaryScale};
+
+use lazy_static::lazy_static;
+
+use crate::tool::SummaryEntry;
 
 pub struct ConnectionProvider {
     data: Arc<Mutex<Option<TcpStream>>>
