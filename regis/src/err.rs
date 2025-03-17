@@ -8,6 +8,7 @@ pub const WEIRD_ERR_EXIT: u8 = 5;
 pub const CONFIG_ERR_EXIT: u8 = 6;
 /// Describes when the user avoids doing something they have to. 
 pub const AVOID_ERR_EXIT: u8 = 7;
+pub const TOKIO_ERR_EXIT: u8 = 8;
 
 #[derive(Debug)]
 pub enum IOCommError {

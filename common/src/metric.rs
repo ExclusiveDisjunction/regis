@@ -156,7 +156,7 @@ impl BinaryNumber {
 /// Represents a percentage between 0-100. 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Utilization {
-    inner: u8,
+    pub inner: u8,
 }
 impl Utilization {
     pub fn new(raw: u8) -> Result<Self, RangeError<u8>> {
@@ -173,6 +173,10 @@ impl Utilization {
 
         Self { inner: raw }
     }
+
+    pub fn take(self) -> u8 {
+        self.into()
+    }
 }
 impl PartialOrd for Utilization {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -187,6 +191,11 @@ impl Ord for Utilization {
 impl Display for Utilization {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}%", self.inner)
+    }
+}
+impl Into<u8> for Utilization {
+    fn into(self) -> u8 {
+        self.inner
     }
 }
 

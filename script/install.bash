@@ -19,3 +19,6 @@ cp ./stress-ng.service /lib/systemd/system
 
 # install needed scripts
 cp ./bundle/* /etc/regis/
+
+# Ensure the firewall lets us work
+firewall-cmd --add-port=1026/TCP

@@ -9,7 +9,7 @@ use clap::Parser;
 use cli::cli_entry;
 
 use common::log::{LoggerLevel, LoggerRedirect, LOG};
-use common::log_info;
+use common::{log_error, log_info};
 
 use config::CONFIG;
 use err::{CHECK_ERR_EXIT, LOG_ERR_EXIT};
@@ -93,12 +93,22 @@ fn main() -> Result<(), ExitCode> {
     }
 
     log_info!("Starting regis service.");
-    if command.no_gui {
+    let result = if command.no_gui {
         log_info!("CLI mode activated.");
         cli_entry()
     }
     else {
         log_info!("GUI mode activated.");
         gui_entry()
+    };
+
+    log_info!("Saving configuration...");
+    if let Err(e) = CONFIG.save(get_config_path()) {
+        log_error!("Unable to save configuration '{e:?}'.");
     }
+    else {
+        log_info!("Configuration saved.");
+    }
+
+    result
 }
