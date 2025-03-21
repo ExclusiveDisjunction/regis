@@ -5,22 +5,26 @@ pub mod msg;
 pub mod metric;
 pub mod orchestra;
 
-use common::log::{LOG, LoggerLevel, LoggerRedirect};
-use common::{log_critical, log_debug, log_info, log_warning};
+use exdisj::log::{LOG, LoggerLevel, LoggerRedirect};
+use exdisj::{log_critical, log_debug, log_info, log_warning};
+use exdisj::lock::OptionRwProvider;
+
 use config::CONFIG;
-use daemonize::Daemonize;
 use loc::{DAEMON_LOG_DIR, TOTAL_DIR};
 use orchestra::Orchestrator;
+
 use regisd_com::loc::{CONSOLE_LOG_DIR, DAEMON_DIR, PID_PATH, STD_ERR_PATH, STD_OUT_PATH};
-use tokio::runtime::Runtime;
 
 use std::process::ExitCode;
 use std::fs::{self, File};
 use std::os::unix::fs::PermissionsExt;
+use std::fs::create_dir_all;
+
+use daemonize::Daemonize;
+
+use tokio::runtime::Runtime;
 
 use clap::Parser;
-
-use std::fs::create_dir_all;
 
 #[derive(Parser, Debug)]
 struct Options {

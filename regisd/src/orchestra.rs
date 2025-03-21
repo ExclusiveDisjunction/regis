@@ -15,9 +15,10 @@ use crate::{
     metric::metrics_entry,
 };
 
-use common::{
+use exdisj::{
     log_critical, log_debug, log_error, log_info, log_warning,
-    task_util::{recv, send, shutdown, DuplexTask, RestartableTask, SimplexTask, StartableTask},
+    task_util::{recv, send, shutdown, DuplexTask, RestartStatusBase, RestartableTask, SimplexTask, StartableTask},
+    lock::OptionRwProvider
 };
 
 /// The amount of time between each task "poll".
@@ -25,12 +26,11 @@ pub const TASK_CHECK_TIMEOUT: u64 = 30;
 /// The buffer size for a default channel buffer.
 pub const TASKS_DEFAULT_BUFFER: usize = 10;
 
-async fn try_send_or_restart<T, F, Fut>(handle: &mut RestartableTask<T>, func: F, buff: usize, value: T::Msg) -> bool 
-where T: StartableTask ,
-F: FnOnce(T::Arg) -> Fut + Send + 'static,
-Fut: Future<Output=T::Output> + Send + 'static {
+async fn try_send_or_restart<T>(handle: &mut RestartableTask<T>, value: T::Msg) -> bool 
+    where T: StartableTask ,
+    T::Output: RestartStatusBase {
     if let Err(e) = send(handle, value).await {
-        let result = handle.restart(func, buff);
+        let result = handle.restart().await;
         log_info!("(Orch) When sending message to task, the task was dead (Error: '{e}'). Could it be restarted? '{}'", result.is_ok());
 
         result.is_err()
@@ -46,9 +46,9 @@ async fn reload_configuration(orch: &mut Orchestrator) -> Result<(), ExitCode> {
     }
 
     let mut send_failure: bool = false;
-    send_failure &= try_send_or_restart(&mut orch.console_thread, console_entry, TASKS_DEFAULT_BUFFER, ConsoleComm::ReloadConfiguration).await;
-    send_failure &= try_send_or_restart(&mut orch.metric_thread, metrics_entry, TASKS_DEFAULT_BUFFER, SimpleComm::ReloadConfiguration).await;
-    send_failure &= try_send_or_restart(&mut orch.client_thread, client_entry, TASKS_DEFAULT_BUFFER, SimpleComm::ReloadConfiguration).await;
+    send_failure &= try_send_or_restart(&mut orch.console_thread, ConsoleComm::ReloadConfiguration).await;
+    send_failure &= try_send_or_restart(&mut orch.metric_thread, SimpleComm::ReloadConfiguration).await;
+    send_failure &= try_send_or_restart(&mut orch.client_thread, SimpleComm::ReloadConfiguration).await;
     
     if send_failure {
         log_critical!("(Orch) Unable to send out configuration reloading messages, as some threads were dead and could not be restarted.");
@@ -118,9 +118,9 @@ impl Orchestrator {
                     log_info!("(Orch) Beginning polls...");
                     let mut result: bool = true;
 
-                    result &= self.client_thread.poll_and_restart(client_entry, TASKS_DEFAULT_BUFFER).await.log_event("client");
-                    result &= self.metric_thread.poll_and_restart(metrics_entry, TASKS_DEFAULT_BUFFER).await.log_event("metrics");
-                    result &= self.console_thread.poll_and_restart(console_entry, TASKS_DEFAULT_BUFFER).await.log_event("console");
+                    result &= self.client_thread.poll_and_restart().await.log_event("client");
+                    result &= self.metric_thread.poll_and_restart().await.log_event("metrics");
+                    result &= self.console_thread.poll_and_restart().await.log_event("console");
 
                     if !result {
                         log_info!("(Orch) Polls complete, failure.");
@@ -159,7 +159,7 @@ impl Orchestrator {
                     }
                     else {
                         log_info!("(Orch) Console thread unexpectedly closed. Attempting to restart...");
-                        if self.console_thread.restart(console_entry, TASKS_DEFAULT_BUFFER).is_err() {
+                        if self.console_thread.restart().await.is_err() {
                             log_critical!("Unable to restart console thread. Shutting down tasks...");
                             break;
                         }

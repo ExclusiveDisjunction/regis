@@ -1,8 +1,14 @@
-use super::{collect::CollectedMetrics, storage::LimitedQueue};
-use common::lock::{RwProvider, RwProviderAccess, ProtectedAccess};
+use common::metric::CollectedMetrics;
+
 use std::sync::{Arc, RwLock};
 
 use lazy_static::lazy_static;
+
+use exdisj::log_error;
+use exdisj::storage::LimitedQueue;
+use exdisj::lock::{RwProvider, RwProviderAccess, ProtectedAccess};
+
+use tokio::sync::broadcast::{Sender, Receiver, channel};
 
 pub const METRICS_HOLDING: usize = 50;
 
@@ -10,8 +16,37 @@ type Storage = LimitedQueue<CollectedMetrics>;
 
 // Thing to improve: Include a mechanism that will eventually hold the discarded items from memory. After that buffer fills up, write it to a file, with a specified number of files kept. This way there is some more historical data, but not stored in memory all of the time.
 
+pub struct MetricsEvents {
+    sender: Arc<Sender<CollectedMetrics>>
+}
+impl Default for MetricsEvents {
+    fn default() -> Self {
+        let (sender, _) = channel(10);
+
+        Self {
+            sender: Arc::new(sender)
+        }
+    }
+}
+impl MetricsEvents {
+    pub fn subscribe(&self) -> Receiver<CollectedMetrics> {
+        self.sender.subscribe()
+    }
+
+    pub fn notify(&self, value: CollectedMetrics) -> bool {
+        if let Err(e) = self.sender.send(value) {
+            log_error!("Unable to send out subscription notification '{e}'");
+            false
+        }
+        else {
+            true
+        }
+    }
+}
+
 pub struct MetricProvider {
     inner: Arc<RwLock<LimitedQueue<CollectedMetrics>>>
+
 }
 impl Default for MetricProvider {
     fn default() -> Self {
@@ -66,4 +101,5 @@ impl MetricProvider {
 
 lazy_static! {
     pub static ref METRICS: MetricProvider = MetricProvider::default();
+    pub static ref EVENTS: MetricsEvents = MetricsEvents::default();
 }

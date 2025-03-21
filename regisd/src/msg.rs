@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
-use common::task_util::{KillMessage, PollableMessage};
+use exdisj::task_util::{KillMessage, PollableMessage, RestartStatusBase};
+
 use regisd_com::msg::ConsoleRequests;
 
 /// A representation of communication between the `Orchestrator` and the client worker tasks.
@@ -91,12 +92,27 @@ impl Display for ConsoleComm {
 /// A simple enum that shows some common reasons why worker threads of the Orch would fail.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum WorkerTaskResult {
+    /*
     Ok,
     Configuration,
     DoNotReboot,
     Sockets,
     Failure,
     ImproperShutdown,
+    */
+
+    /// The configuration could not be read
+    ConfigError,
+    /// The network that the task uses could not be connected to, or messages could not be checked.
+    NetworkFail,
+    /// A worker task had a failure that caused the current task to fail.
+    WorkerFail,
+    /// A shutdown of the task did not go succesfully
+    ImproperShutdown,
+    /// A failure that could not be described directly, but should not be restarted.
+    ComplexFail,
+    /// A failure to a simple reason that can be restarted. 
+    SimpleFail,
 }
 impl Display for WorkerTaskResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -104,20 +120,25 @@ impl Display for WorkerTaskResult {
             f,
             "{}",
             match self {
-                Self::Ok => "ok",
-                Self::Configuration => "configuration issue",
-                Self::DoNotReboot => "error, unable to reboot",
-                Self::Sockets => "sockets error",
-                Self::Failure => "general failure, rebootable",
-                Self::ImproperShutdown => "improper shutdown",
+                Self::ConfigError => "configuration issue",
+                Self::NetworkFail => "network failure",
+                Self::WorkerFail => "a worker task failed",
+                Self::ImproperShutdown => "the task was not able to shutdown properly",
+                Self::ComplexFail => "a complex failure",
+                Self::SimpleFail => "a simple failure",
             }
         )
     }
 }
-impl WorkerTaskResult {
-    pub fn rebootable(&self) -> bool {
-        matches!(self, Self::Ok | Self::Failure | Self::Sockets)
+impl RestartStatusBase for WorkerTaskResult {
+    fn is_restartable(&self) -> bool {
+        matches!(self, Self::SimpleFail | Self::NetworkFail | Self::WorkerFail | Self::ImproperShutdown)
     }
+    fn conditionally_restartable(&self) -> bool {
+        matches!(self, Self::ConfigError)
+    }
+}
+impl WorkerTaskResult {
     pub fn is_ok(&self) -> bool {
         matches!(self, Self::Ok)
     }

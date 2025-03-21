@@ -1,16 +1,16 @@
-use common::log::{LOG, LoggerLevel, LoggerRedirect};
-use common::version::Version;
-use common::{log_critical, log_info};
-use common::msg::send_request_async;
-use regisd_com::msg::ConsoleRequests;
+use exdisj::log::{LOG, LoggerLevel, LoggerRedirect};
+use exdisj::version::Version;
+use exdisj::{log_critical, log_info};
+use exdisj::msg::send_request;
 
-use regisd_com::loc::{COMM_PATH, CONSOLE_LOG_DIR};
+use common::msg::ConsoleRequests;
+use common::loc::{COMM_PATH, CONSOLE_LOG_DIR};
 
-use tokio::net::UnixStream;
-use tokio::fs::create_dir_all;
-use clap::{Parser, Subcommand};
-
+use std::os::unix::net::UnixStream;
+use std::fs::create_dir_all;
 use std::process::exit;
+
+use clap::{Parser, Subcommand};
 
 pub const REGISC_VERSION: Version = Version::new(0, 1, 0);
 
@@ -35,7 +35,7 @@ enum Commands {
     Poll,
 }
 
-pub async fn entry() {
+pub fn entry() {
     // Parse command
     let command = Cli::parse();
 
@@ -51,7 +51,7 @@ pub async fn entry() {
         redirect = LoggerRedirect::default();
     }
 
-    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR).await {
+    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR) {
         eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
         exit(1);
     }
@@ -74,7 +74,7 @@ pub async fn entry() {
 
     //Connect
     log_info!("Connecting to regisd...");
-    let mut stream = match UnixStream::connect(COMM_PATH).await {
+    let mut stream = match UnixStream::connect(COMM_PATH) {
         Ok(v) => v,
         Err(e) => {
             if request == ConsoleRequests::Poll {
@@ -88,7 +88,7 @@ pub async fn entry() {
     };
 
     // Send message
-    let result = send_request_async(request, &mut stream).await;
+    let result = send_request(request, &mut stream);
     
     if let Err(e) = result {
         if request == ConsoleRequests::Poll {

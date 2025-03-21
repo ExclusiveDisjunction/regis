@@ -1,1 +1,1 @@
-pub use common::storage::*;
+pub use exdisj::storage::*;
