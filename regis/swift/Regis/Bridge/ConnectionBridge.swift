@@ -37,61 +37,15 @@ struct IPv4ConnectionBridge {
             d: self.d
         )
     }
-}
-
-struct IPv6ConnectionBridge {
-    let a: (CChar, CChar, CChar, CChar)
-    let b: (CChar, CChar, CChar, CChar)
-    let c: (CChar, CChar, CChar, CChar)
-    let d: (CChar, CChar, CChar, CChar)
     
-    let e: (CChar, CChar, CChar, CChar)
-    let f: (CChar, CChar, CChar, CChar)
-    let g: (CChar, CChar, CChar, CChar)
-    let h: (CChar, CChar, CChar, CChar)
-    
-    static func unpack(_ data: [String]) -> IPv6ConnectionBridge? {
-        guard data.count == 8 else { return nil }
-        
-        var result = [(CChar, CChar, CChar, CChar)](repeating: (CChar("0")!, CChar("0")!, CChar("0")!, CChar("0")!), count: 8)
-        for (index, value) in data.enumerated() {
-            let transformed = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            
-            let as_utf8 = Array(transformed.utf8);
-            guard as_utf8.count == 4 else { return nil }
-            
-            result[index] = (CChar(as_utf8[0]), CChar(as_utf8[1]), CChar(as_utf8[2]), CChar(as_utf8[3]))
-        }
-        
-        return self.init(
-            a: result[0],
-            b: result[1],
-            c: result[2],
-            d: result[3],
-            
-            e: result[4],
-            f: result[5],
-            g: result[6],
-            h: result[7]
-        )
+    func toString() -> String {
+        return "\(self.a).\(self.b).\(self.c).\(self.d)"
     }
     
-    func intoIPv6() -> IPv6Connection {
-        IPv6Connection(
-            a: self.a,
-            b: self.b,
-            c: self.c,
-            d: self.d,
-            
-            e: self.e,
-            f: self.f,
-            g: self.g,
-            h: self.h
-        )
+    static func fromString(raw: String) -> IPv4ConnectionBridge? {
+        let parts = raw.split(separator: ".").compactMap { UInt8($0) };
+        guard parts.count == 4 else { return nil }
+        
+        return IPv4ConnectionBridge(a: parts[0], b: parts[1], c: parts[2], d: parts[3])
     }
-}
-
-enum IPConnection {
-    case v4(IPv4ConnectionBridge)
-    case v6(IPv6ConnectionBridge)
 }

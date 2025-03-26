@@ -18,7 +18,7 @@ struct PrevHostsPicker: View {
                 Text(value.name)
             }
             TableColumn("IP") { value in
-                Text(value.)
+                Text(value.ip?.toString() ?? "")
             }
         }
     }
@@ -31,7 +31,7 @@ enum ConnectViewResult {
 
 struct ConnectView: View {
     @State var selectedHost: UUID?;
-    @State var ip: IPData = .v4(.init())
+    @State var ip: IPv4ViewModel = IPv4ViewModel();
     @State var saveNew: Bool = true;
     @State var name: String = "";
     @State var showSheet: Bool = false;
@@ -62,7 +62,7 @@ struct ConnectView: View {
                         Grid {
                             GridRow {
                                 Text("IP:")
-                                IPEntry(data: $ip)
+                                IPv4Entry(data: ip)
                             }
                             
                             if saveNew {

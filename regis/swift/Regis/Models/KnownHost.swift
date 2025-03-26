@@ -10,13 +10,22 @@ import Foundation;
 
 @Model
 class KnownHost: Identifiable{
-    init(_ id: UUID, name: String, ip: IPConnection) {
+    init(_ id: UUID, name: String, ip: IPv4ConnectionBridge) {
         self.id = id
         self.name = name
-        self.ip = ip
+        self.rawIP = ip.toString()
     }
     
     var id: UUID;
     var name: String;
-    var ip: IPConnection;
+    var rawIP: String;
+    
+    var ip: IPv4ConnectionBridge? {
+        get {
+            return IPv4ConnectionBridge.fromString(raw: self.rawIP)
+        }
+        set(v) {
+            self.rawIP = v?.toString() ?? "";
+        }
+    }
 }
