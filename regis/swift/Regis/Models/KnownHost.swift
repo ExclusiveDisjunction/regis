@@ -10,7 +10,7 @@ import Foundation;
 
 @Model
 class KnownHost: Identifiable{
-    init(_ id: UUID, name: String, ip: String) {
+    init(_ id: UUID, name: String, ip: IPConnection) {
         self.id = id
         self.name = name
         self.ip = ip
@@ -18,5 +18,5 @@ class KnownHost: Identifiable{
     
     var id: UUID;
     var name: String;
-    var ip: String;
+    var ip: IPConnection;
 }

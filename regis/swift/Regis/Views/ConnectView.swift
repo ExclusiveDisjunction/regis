@@ -15,10 +15,10 @@ struct PrevHostsPicker: View {
     var body: some View {
         Table(hosts, selection: $selectedHost) {
             TableColumn("Name") { value in
-                
+                Text(value.name)
             }
             TableColumn("IP") { value in
-                
+                Text(value.)
             }
         }
     }

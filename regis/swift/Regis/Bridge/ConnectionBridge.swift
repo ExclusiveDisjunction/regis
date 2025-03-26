@@ -90,3 +90,8 @@ struct IPv6ConnectionBridge {
         )
     }
 }
+
+enum IPConnection {
+    case v4(IPv4ConnectionBridge)
+    case v6(IPv6ConnectionBridge)
+}
