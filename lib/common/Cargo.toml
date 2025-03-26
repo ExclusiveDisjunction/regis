@@ -5,8 +5,5 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.40"
-lazy_static = "1.5.0"
 serde = {version = "1.0.218", features = ["derive"]}
-serde_json = "1.0.139"
-tokio = {version = "1.44.0", features = ["full"]}
-exdisj = { path="../exdisj", features=["async"] }
+exdisj = { path="../exdisj" }
