@@ -272,41 +272,30 @@ lazy_static! {
     pub static ref LOG: Logger = Logger::default();
 }
 
-pub fn log_direct(level: LoggerLevel, contents: String) {
+pub fn log_global(level: LoggerLevel, contents: String) {
     if !LOG.is_open() {
         return;
     }
 
     let mut lock = LOG.access();
-
-    let can_access = lock.access().map(|x| level >= x.level()).unwrap_or(false);
-
-    if can_access {
-        if let Some(cont) = lock.access_mut() {
-            if let Err(e) = cont.write_direct(contents, level) {
-                eprintln!("unable to end log because of '{:?}'. Log will be closed", e);
-                LOG.reset();
-            }
+    match lock.access_mut() {
+        Some(v) => log_direct(v, level, contents),
+        None => return
+    }
+}
+pub fn log_direct(logger: &mut LoadedLogger, level: LoggerLevel, contents: String) {
+    if level >= logger.level() {
+        if let Err(e) = logger.write_direct(contents, level) {
+            eprintln!("unable to end log because of '{:?}'. Log will be closed", e);
+            LOG.reset();
         }
     }
 }
 
-/// A macro that allows for shorthand with logger writting. The callee must sepecify the level as `LoggerLevel`, and the message.
-/// # Example
-/// ```
-/// logger_write!(LoggerLevel::Info, "this is an info log holding value {}", 3);
-/// // Which is the same as:
-/// logger.access()?.access()?.write_direct(format!("this is an info log holding value {}", 3), LoggerLevel::Info);
-/// ```
-/// 
-/// Note that this macro will report errors, as they happen. However, if the logger is not open (`logger.is_open() == false`), it will do nothing. 
-/// This macro will evaluate the arguments *before* aquiring the lock to the logger. This is to prevent deadlocks, where an argument calls something with the logger.
-#[macro_export]
-macro_rules! logger_write {
-    ($level: expr, $($arg:tt)*) => {
+#[macro_export(local_inner_macros)]
+macro_rules! collapse_level {
+    ($level: expr) => {
         {
-            let contents: String = format!($($arg)*);
-
             #[allow(unreachable_patterns)]
             let true_level: $crate::log::LoggerLevel = match $level {
                 $crate::log::LoggerLevel::Debug => $crate::log::LoggerLevel::Debug,
@@ -316,8 +305,32 @@ macro_rules! logger_write {
                 $crate::log::LoggerLevel::Critical => $crate::log::LoggerLevel::Critical,
                 //_ => compile_error!("the type passed into this enum must be of LoggerLevel")
             };
+
+            true_level
+        }
+    }
+}
+
+/// A macro that allows for shorthand with logger writting. The callee must sepecify the level as `LoggerLevel`, and the message.
+/// Note that this macro will report errors, as they happen. However, if the logger is not open (`logger.is_open() == false`), it will do nothing. 
+/// This macro will evaluate the arguments *before* aquiring the lock to the logger. This is to prevent deadlocks, where an argument calls something with the logger.
+#[macro_export]
+macro_rules! logger_write {
+    ($level: expr, $($arg:tt)*) => {
+        {
+            let contents: String = format!($($arg)*);
+            let level = $crate::collapse_level!($level);
             
-            $crate::log::log_direct(true_level, contents);
+            
+            $crate::log::log_global(level, contents);
+        }
+    };
+    ($log: expr, $level: expr, $($arg:tt)*) => {
+        {
+            let contents: String = format!($($arg)*);
+            let level = $crate::collapse_level!($level);
+
+            $crate::log::log_direct($log, level, contents);
         }
     };
 }
@@ -329,6 +342,11 @@ macro_rules! log_debug {
             use $crate::logger_write;
             logger_write!($crate::log::LoggerLevel::Debug, $($arg)*)
         }
+    };
+    ($log: expr, $($arg:tt)*) => {
+        {
+            $crate::logger_write!($log, $crate::log::LoggerLevel::Debug, $($arg)*)
+        }
     }
 }
 /// Writes to the logger with `LoggerLevel::Info`. Equivalent to `logger_write!(LoggerLevel::Info, _)`
@@ -338,6 +356,11 @@ macro_rules! log_info {
         {
             use $crate::logger_write;
             logger_write!($crate::log::LoggerLevel::Info, $($arg)*)
+        }
+    };
+    ($log: expr, $($arg:tt)*) => {
+        {
+            $crate::logger_write!($log, $crate::log::LoggerLevel::Info, $($arg)*)
         }
     }
 }
@@ -349,6 +372,11 @@ macro_rules! log_warning {
             use $crate::logger_write;
             logger_write!($crate::log::LoggerLevel::Warning, $($arg)*)
         }
+    };
+    ($log: expr, $($arg:tt)*) => {
+        {
+            $crate::logger_write!($log, $crate::log::LoggerLevel::Warning, $($arg)*)
+        }
     }
 }
 /// Writes to the logger with `LoggerLevel::Error`. Equivalent to `logger_write!(LoggerLevel::Error, _)`
@@ -359,6 +387,11 @@ macro_rules! log_error {
             use $crate::logger_write;
             logger_write!($crate::log::LoggerLevel::Error, $($arg)*)
         }
+    };
+    ($log: expr, $($arg:tt)*) => {
+        {
+            $crate::logger_write!($log, $crate::log::LoggerLevel::Error, $($arg)*)
+        }
     }
 }
 /// Writes to the logger with `LoggerLevel::Critical`. Equivalent to `logger_write!(LoggerLevel::Critical, _)`
@@ -368,6 +401,11 @@ macro_rules! log_critical {
         {
             use $crate::logger_write;
             logger_write!($crate::log::LoggerLevel::Critical, $($arg)*)
+        }
+    };
+    ($log: expr, $($arg:tt)*) => {
+        {
+            $crate::logger_write!($log, $crate::log::LoggerLevel::Critical, $($arg)*)
         }
     }
 }

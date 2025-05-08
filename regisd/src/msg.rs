@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
-use common::task_util::{KillMessage, PollableMessage};
-use regisd_com::msg::ConsoleRequests;
+use exdisj::task_util::{KillMessage, PollableMessage};
+use exdisj::task_util::RestartStatusBase;
+use common::msg::ConsoleRequests;
 
 /// A representation of communication between the `Orchestrator` and the client worker tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,14 +115,11 @@ impl Display for WorkerTaskResult {
         )
     }
 }
-impl WorkerTaskResult {
-    pub fn rebootable(&self) -> bool {
-        matches!(self, Self::Ok | Self::Failure | Self::Sockets)
+impl RestartStatusBase for WorkerTaskResult {
+    fn is_restartable(&self) -> bool {
+        matches!(self, Self::Ok | Self::ImproperShutdown )   
     }
-    pub fn is_ok(&self) -> bool {
-        matches!(self, Self::Ok)
-    }
-    pub fn is_err(&self) -> bool {
-        !self.is_ok()
+    fn conditionally_restartable(&self) -> bool {
+        matches!(self, Self::Sockets | Self::Configuration )
     }
 }

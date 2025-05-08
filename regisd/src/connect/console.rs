@@ -8,8 +8,8 @@ use tokio::{
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use common::{log_debug, log_error, log_info, msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
-use regisd_com::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
+use exdisj::{log_debug, log_error, log_info, msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
+use common::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
 

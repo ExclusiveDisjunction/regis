@@ -1,10 +1,10 @@
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
-use crate::loc::CLIENTS_PORT;
-use common::config::{ConfigBase, ConfigurationProvider};
+use common::loc::CLIENTS_PORT;
+use exdisj::config::{ConfigBase, ConfigurationProvider};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Configuration {
     pub max_console: u8,
     pub max_hosts: u8,

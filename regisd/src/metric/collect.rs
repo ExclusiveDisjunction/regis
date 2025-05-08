@@ -11,7 +11,7 @@
 
 use tokio::process::Command;
 
-use common::log_warning;
+use exdisj::log_warning;
 pub use common::metric::*;
 
 pub async fn collect_memory() -> Option<MemorySnapshot> {

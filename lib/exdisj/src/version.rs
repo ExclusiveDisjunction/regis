@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::{Debug, Display}};
+use std::{cmp::Ordering, fmt::{Debug, Display}, str::FromStr};
 use serde::{Serialize, Deserialize};
 use crate::error::FormattingError;
 
@@ -45,23 +45,23 @@ impl Ord for Version {
         }
     }
 }
-impl TryFrom<String> for Version {
-    type Error = FormattingError;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl FromStr for Version {
+    type Err = FormattingError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = [String::new(), String::new(), String::new()];
         let mut i = 0usize;
-        for l in value.chars() {
+        for l in s.chars() {
             match l {
                 '.' => {
                     if i + 1 >= parts.len() { //Too many periods!
-                        return Err(FormattingError::new(&value, "too many periods contained"));
+                        return Err(FormattingError::new(&s, "too many periods contained"));
                     }
                     i += 1;
                 },
                 _ if l.is_numeric() => {
                     parts[i].push(l);
                 },
-                _ => return Err(FormattingError::new(&value, format!("unrecognized token '{}'", l)))
+                _ => return Err(FormattingError::new(&s, format!("unrecognized token '{}'", l)))
             }
         }
 
@@ -71,7 +71,7 @@ impl TryFrom<String> for Version {
 
         match (major_try, minor_try, build_try) {
             (Ok(ma), Ok(mi), Ok(bd)) => Ok(Self::new(ma, mi, bd)),
-            _ => Err(FormattingError::new(&value, "one or more sub-parts could not be expressed as a u16"))
+            _ => Err(FormattingError::new(&s, "one or more sub-parts could not be expressed as a u16"))
         }
     }
 }
@@ -112,9 +112,9 @@ pub fn test_version_functions() {
     assert_eq!(list, vec![v5, v1, v4, v6, v2, v3, v7]);
 
     let v1_str: String = v1.to_string();
-    let v1_decoded = Version::try_from(v1_str);
+    let v1_decoded: Result<Version, _> = v1_str.parse();
     assert_eq!(v1_decoded.unwrap(), v1);
 
-    let dummy_decoded = Version::try_from(".4.0".to_string());
+    let dummy_decoded: Result<Version, _> = ".4.0".parse();
     assert!(dummy_decoded.is_err());
 }

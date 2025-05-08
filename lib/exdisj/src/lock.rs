@@ -505,6 +505,7 @@ impl<'a, T> OptionMutexGuard<'a, T> where T: 'a {
     }
 }
 
+/// Holds a reference to a specific type `T`, but does not allow anyone to access it, but functions in this module. Used for safe passage of data of Providers.
 pub struct ProtectedAccess<'a, T> {
     data: &'a T
 }
@@ -520,12 +521,16 @@ impl<'a,T> ProtectedAccess<'a, T> {
     }
 }
 
+/// A global-safe object that stores an instance of some data.
 pub trait RwProvider {
     type Data;
 
+    /// Returns data used by other traits in a safe way.
     fn access_raw(&self) -> ProtectedAccess<'_, Arc<RwLock<Self::Data>>>;
 }
+/// A global-safe object that can be accessed with read and write capabilities. 
 pub trait RwProviderAccess : RwProvider {
+    /// Forces the value of the provider to be `value`. This will clear any poisioning errors, and will not attempt to retreive the old data.
     fn pass(&self, value: Self::Data) {
         let arc = self.access_raw().take();
         let mut guard = match arc.write() {
@@ -536,13 +541,16 @@ pub trait RwProviderAccess : RwProvider {
         *guard = value;
         arc.clear_poison();
     }
+    /// If the data that this object holds is `Default`, then this will call `pass(Self::Data::default())`.
     fn set_to_default(&self) where Self::Data: Default {
         self.pass(Self::Data::default())
     }
+    /// Determines if the data held has been poisoned.
     fn is_poisoned(&self) -> bool {
         self.access_raw().take().is_poisoned()
     }
 
+    /// Gets a lock read guard for the data stored.
     fn access(&self) -> ReadGuard<'_, Self::Data> {
         self.access_raw()
             .take()
@@ -550,6 +558,7 @@ pub trait RwProviderAccess : RwProvider {
             .map_err(PoisonError::new)
             .into()
     }
+    /// Gets a lock write guard for the data stored.
     fn access_mut(&self) -> WriteGuard<'_, Self::Data> {
         self.access_raw()
             .take()
@@ -558,8 +567,9 @@ pub trait RwProviderAccess : RwProvider {
             .into()
     }
 }
-
+/// A global-safe object that stores optional data, and can be accessed. Note that the type must implement RwProvider, but the type must be Option<T>. 
 pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
+    /// Forces the value of the provider to be `value`. This will clear any poisioning errors, and will not attempt to retreive the old data.
     fn pass(&self, value: T) {
         let arc = self.access_raw().take();
         let mut guard = match arc.write() {
@@ -570,10 +580,16 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
         *guard = Some(value);
         arc.clear_poison();
     }
+    /// If the type `T` implements Default, this will set the data stored internally to the default of `T`. 
     fn set_to_default(&self) where T: Default {
         self.pass(T::default())
     }
+    /// Determines if the data held has been poisoned.
+    fn is_poisoned(&self) -> bool {
+        self.access_raw().take().is_poisoned()
+    }
 
+    /// Sets the data stored to be `None`. 
     fn reset(&self) {
         let raw = self.access_raw().take();
         match raw.write() {
@@ -585,6 +601,7 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
             }
         }
     }
+    /// Determines if there is a data stored within the structure.
     fn is_open(&self) -> bool {
         self.access_raw()
             .take()
@@ -594,6 +611,7 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
             .unwrap_or(false)
     }
 
+    /// Obtains a read lock guard to the internal data.
     fn access(&self) -> OptionReadGuard<'_, T> {
         self.access_raw()
             .take()
@@ -601,6 +619,7 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
             .map_err(PoisonError::new)
             .into()
     }
+    /// Obtains a write lock guard to the internal data.
     fn access_mut(&self) -> OptionWriteGuard<'_, T> {
         self.access_raw()
             .take()
@@ -610,6 +629,7 @@ pub trait OptionRwProvider<T>: RwProvider<Data = Option<T>> {
     }
 }
 
+/// A global-safe object that stores an instance of some data.
 pub trait MutexProvider {
     type Data;
 
@@ -619,6 +639,7 @@ pub trait MutexProvider {
         self.access_raw().take().is_poisoned()
     }
 }
+/// A global-safe object that can be accessed with read and write capabilities. 
 pub trait MutexProviderAccess : MutexProvider {
     fn pass(&self, value: Self::Data) {
         let arc = self.access_raw().take();
@@ -641,7 +662,7 @@ pub trait MutexProviderAccess : MutexProvider {
             .into()
     }
 }
-
+/// A global-safe object that stores optional data, and can be accessed.
 pub trait OptionMutexProvider<T>: MutexProvider<Data = Option<T>> {
     fn pass(&self, value: T) {
         let arc = self.access_raw().take();

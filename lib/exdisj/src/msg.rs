@@ -1,14 +1,19 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{to_string, from_str};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
 
 use std::{
     fmt::{
         Debug, 
         Display
-    }, io::{Write, Read}, string::FromUtf8Error};
+    }, 
+    io::{
+        Write, 
+        Read
+    },
+    string::FromUtf8Error};
 
-use crate::{metric::{CollectedMetrics, PrettyPrinter}, net::{receive_buffer, receive_buffer_async, send_buffer, send_buffer_async}};
+use crate::net::{receive_buffer, send_buffer};
 
 pub enum SendError {
     Serde(serde_json::Error),
@@ -94,42 +99,6 @@ pub trait MessageBasis: Serialize + for<'de> Deserialize<'de> + PartialEq + Clon
 pub trait RequestMessage : MessageBasis {}
 /// A marker that this message is for responses.
 pub trait ResponseMessage : MessageBasis {}
-
-/// General response about server status
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ServerStatusResponse {
-    pub info: CollectedMetrics
-}
-impl MessageBasis for ServerStatusResponse {}
-impl ResponseMessage for ServerStatusResponse {} 
-impl Display for ServerStatusResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.info.pretty_print(0, None)
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct MetricsResponse {
-    pub info: Vec<CollectedMetrics>
-}
-impl Display for MetricsResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let each_metric: Vec<String> = self.info.iter()
-        .enumerate()
-            .map(|(i, x)| x.pretty_print(0, Some(i+1)))
-            .collect();
-
-        let joined = each_metric.join("\n");
-        
-        write!(f, "{joined}")
-    }
-}
-impl MessageBasis for MetricsResponse {}
-impl ResponseMessage for MetricsResponse {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
 #[repr(u16)]
@@ -298,49 +267,6 @@ impl Acknoledgement {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub enum RequestMessages {
-    Status,
-    Metrics(usize),
-    Ack(Acknoledgement)
-}
-impl From<usize> for RequestMessages {
-    fn from(value: usize) -> Self {
-        Self::Metrics(value)
-    }
-}
-impl From<Acknoledgement> for RequestMessages {
-    fn from(value: Acknoledgement) -> Self {
-        Self::Ack(value)
-    }
-}
-impl MessageBasis for RequestMessages {}
-impl RequestMessage for RequestMessages { }
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub enum ResponseMessages {
-    Status(ServerStatusResponse),
-    Metrics(MetricsResponse),
-    Ack(Acknoledgement)
-}
-impl From<ServerStatusResponse> for ResponseMessages {
-    fn from(value: ServerStatusResponse) -> Self {
-        Self::Status(value)
-    }
-}
-impl From<MetricsResponse> for ResponseMessages {
-    fn from(value: MetricsResponse) -> Self {
-        Self::Metrics(value)
-    }
-}
-impl From<Acknoledgement> for ResponseMessages {
-    fn from(value: Acknoledgement) -> Self {
-        Self::Ack(value)
-    }
-}
-impl MessageBasis for ResponseMessages { }
-impl ResponseMessage for ResponseMessages { }
-
 pub fn send_message<T, S>(message: T, sok: &mut S) -> Result<(), SendError> where T: MessageBasis, S: Write {
     let serialized = to_string(&message).map_err(SendError::from)?;
     send_buffer(serialized.as_bytes(), sok).map_err(SendError::from)
@@ -368,29 +294,39 @@ pub fn decode_response<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: Res
     decode_message(soc)
 }
 
-pub async fn send_message_async<T, S>(message: T, sok: &mut S) -> Result<(), SendError> where T: MessageBasis, S: AsyncWriteExt + Unpin {
-    let serialized = to_string(&message).map_err(SendError::from)?;
-    send_buffer_async(serialized.as_bytes(), sok).await.map_err(SendError::from)
-}
-pub async fn send_request_async<T, S>(message: T, sok: &mut S) -> Result<(), SendError>  where T: RequestMessage, S: AsyncWriteExt + Unpin {
-    send_message_async(message, sok).await
-}
-pub async fn send_response_async<T, S>(message: T, soc: &mut S) -> Result<(), SendError> where T: ResponseMessage, S: AsyncWriteExt + Unpin {
-    send_message_async(message, soc).await
+#[cfg(feature="async")]
+pub mod msg_async {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use crate::net::{send_buffer_async, receive_buffer_async};
+
+    pub async fn send_message_async<T, S>(message: T, sok: &mut S) -> Result<(), SendError> where T: MessageBasis, S: AsyncWriteExt + Unpin {
+        let serialized = to_string(&message).map_err(SendError::from)?;
+        send_buffer_async(serialized.as_bytes(), sok).await.map_err(SendError::from)
+    }
+    pub async fn send_request_async<T, S>(message: T, sok: &mut S) -> Result<(), SendError>  where T: RequestMessage, S: AsyncWriteExt + Unpin {
+        send_message_async(message, sok).await
+    }
+    pub async fn send_response_async<T, S>(message: T, soc: &mut S) -> Result<(), SendError> where T: ResponseMessage, S: AsyncWriteExt + Unpin {
+        send_message_async(message, soc).await
+    }
+
+    pub async fn decode_message_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: MessageBasis, S: AsyncReadExt + Unpin {
+        let mut contents: Vec<u8> = Vec::new();
+        receive_buffer_async(&mut contents, soc).await.map_err(DecodeError::from)?;
+
+        let str_contents = String::from_utf8(contents).map_err(DecodeError::from)?;
+        let result: Result<T, _> = from_str(&str_contents);
+    
+        result.map_err(DecodeError::from)
+    }
+    pub async fn decode_request_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: RequestMessage, S: AsyncReadExt + Unpin {
+        decode_message_async(soc).await
+    }
+    pub async fn decode_response_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: ResponseMessage, S: AsyncReadExt + Unpin {
+        decode_message_async(soc).await
+    }
 }
 
-pub async fn decode_message_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: MessageBasis, S: AsyncReadExt + Unpin {
-    let mut contents: Vec<u8> = Vec::new();
-    receive_buffer_async(&mut contents, soc).await.map_err(DecodeError::from)?;
-
-    let str_contents = String::from_utf8(contents).map_err(DecodeError::from)?;
-    let result: Result<T, _> = from_str(&str_contents);
-   
-    result.map_err(DecodeError::from)
-}
-pub async fn decode_request_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: RequestMessage, S: AsyncReadExt + Unpin {
-    decode_message_async(soc).await
-}
-pub async fn decode_response_async<T, S>(soc: &mut S) -> Result<T, DecodeError> where T: ResponseMessage, S: AsyncReadExt + Unpin {
-    decode_message_async(soc).await
-}
+#[cfg(feature="async")]
+pub use msg_async::*;

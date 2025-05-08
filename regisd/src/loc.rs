@@ -1,1 +1,0 @@
-pub use regisd_com::loc::*;
