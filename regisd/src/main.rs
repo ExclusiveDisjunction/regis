@@ -5,6 +5,7 @@ pub mod metric;
 pub mod orchestra;
 pub mod failure;
 pub mod setup;
+pub mod sess;
 
 use exdisj::{log_critical, log_debug, log_info, log_warning};
 use exdisj::lock::OptionRwProvider;
@@ -25,7 +26,7 @@ fn run() -> Result<(), DaemonFailure> {
         return Err( DaemonFailure::SetupDirectoryError );
     }
 
-    if let Err(_) = setup::start_logger(&cli) {
+    if !setup::start_logger(&cli) {
         eprintln!("Unable to start logger.");
         return Err( DaemonFailure::LoggerError );
     }

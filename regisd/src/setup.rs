@@ -72,7 +72,7 @@ pub fn begin_runtime(options: Options) -> Result<(), DaemonFailure> {
     })
 }
 
-pub fn start_logger(options: &Options) -> Result<(), ()> {
+pub fn start_logger(options: &Options) -> bool {
     let level: LoggerLevel;
     let redirect: LoggerRedirect;
     if cfg!(debug_assertions) || options.debug {
@@ -91,7 +91,7 @@ pub fn start_logger(options: &Options) -> Result<(), ()> {
     let today = chrono::Local::now();
     let logger_path = format!("{}{:?}-run.log", DAEMON_LOG_DIR, today);
 
-    LOG.open(logger_path, level, redirect).map_err(|_| ())
+    LOG.open(logger_path, level, redirect).is_ok()
 }
 
 pub fn create_paths() -> Result<(), std::io::Error> {
@@ -111,14 +111,14 @@ pub fn run_as_daemon(options: Options) -> Result<(), DaemonFailure> {
     let stderr_path = options.stderr.as_deref().unwrap_or(STD_ERR_PATH);
 
     let constructor = || -> Result<(File, File), std::io::Error> {
-        Ok( ( File::create(&stdout_path)?, File::create(&stderr_path)? ) )
+        Ok( ( File::create(stdout_path)?, File::create(stderr_path)? ) )
     };
 
     let (stdout, stderr) = match constructor() {
         Ok(v) => v,
         Err(e) => {
             log_critical!("Unable to construct the stdout and/or stderr files at '{}' and '{}', respectivley. Reason: '{e}'", stdout_path, stderr_path);
-            return Err( DaemonFailure::SetupStreamError.into() );
+            return Err( DaemonFailure::SetupStreamError );
         }
     };
 

@@ -176,7 +176,7 @@ impl<'a, T> Iterator for LimitedQueueIterMut<'a, T> where T: Default + Clone {
         }
     }
 }
-impl<'a, T> LimitedQueueIterMut<'a, T> where T: Default + Clone {
+impl<T> LimitedQueueIterMut<'_, T> where T: Default + Clone {
     pub fn new(source: &mut LimitedQueue<T>) -> Self {
         Self {
             data: source.data.as_mut_ptr(),
@@ -184,7 +184,7 @@ impl<'a, T> LimitedQueueIterMut<'a, T> where T: Default + Clone {
             b: source.back_index(),
             capacity: source.capacity(),
             len: source.len(),
-            marker: PhantomData::default()
+            marker: PhantomData
         }
     }
 }
