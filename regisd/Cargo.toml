@@ -11,6 +11,7 @@ path = "src/main.rs"
 exdisj = { path="../lib/exdisj", features=["async"] }
 common = { path="../lib/common" }
 backend = { path="../lib/backend" }
+
 serde = {version = "1.0.218", features = ["derive"]}
 serde_json = "1.0.139"
 tokio = { version = "1", features = ["full"] }
@@ -20,6 +21,6 @@ clap = { version = "4.5.32", features = ["derive"] }
 daemonize = "0.5.0"
 aes-gcm = "0.10.3"
 rand = "0.9.1"
-rsa_ext = "0.1.2"
+rsa_ext = { version = "0.1.2", features = ["serde"] }
 sha2 = "0.10.9"
 rand_core = "0.9.3"
