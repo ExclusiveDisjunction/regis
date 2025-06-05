@@ -233,7 +233,6 @@ impl Orchestrator {
         else {
             Ok(()) 
         }
-       
     }
 
     fn get_shutdown_msg(x: Result<Option<WorkerTaskResult>, JoinError>) -> String {
@@ -247,14 +246,13 @@ impl Orchestrator {
     }
 
     pub async fn shutdown(self) {
-
         let shutdowns = vec![
             shutdown(self.client_thread).await,
             shutdown(self.console_thread).await,
             shutdown(self.metric_thread).await
         ];
         let mut iter = shutdowns.into_iter()
-        .map(Self::get_shutdown_msg);
+            .map(Self::get_shutdown_msg);
 
         log_info!(
             "(Orch) Client task shutdown with response '{}'",
