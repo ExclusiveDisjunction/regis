@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 chrono = "0.4.40"
 serde = {version = "1.0.218", features = ["derive"]}
-exdisj = { path="../exdisj" }
+exdisj = { path="../../exdisj-rs" }
