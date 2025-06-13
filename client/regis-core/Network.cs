@@ -60,7 +60,7 @@ public static class Network {
 
         int dataLength = BitConverter.ToInt32(lengthBuffer);
 
-        List<byte> result = new();
+        List<byte> result = [];
         byte[] buffer = new byte[packetSize];
         while (true) {
             int read = await over.ReadAsync(buffer.AsMemory(0, packetSize), cancellationToken).ConfigureAwait(false);

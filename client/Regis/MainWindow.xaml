@@ -1,0 +1,80 @@
+﻿<Window x:Class="Regis.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Regis"
+        mc:Ignorable="d"
+        Title="Regis" Height="450" Width="800">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1*"/>
+            <ColumnDefinition Width="5*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="1*"/>
+            <RowDefinition Height="20"/>
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" Grid.ColumnSpan="2">
+            <MenuItem Header="Regis">
+                <MenuItem x:Name="Quit" Header="Quit Regis" Click="Quit_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="Edit">
+                <MenuItem x:Name="Settings" Header="Settings" Click="Settings_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="Connection">
+                <MenuItem x:Name="OpenConnection" Header="Open Connection" Click="OpenConnection_Click"/>
+                <MenuItem x:Name="CloseConnection" Header="Close Connection" Click="CloseConnection_Click"/>
+
+                <Separator/>
+
+                <MenuItem x:Name="Refresh" Header="Refresh Data" Click="Refresh_Click"/>
+                <MenuItem x:Name="PauseCollection" Header="Pause" Click="PauseCollection_Click"/>
+                <MenuItem x:Name="ResumeCollection" Header="Resume" Click="ResumeCollection_Click"/>
+
+                <Separator/>
+
+                <MenuItem x:Name="ConnDetails" Header="Connection Details" Click="ConnDetails_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="Window">
+                <MenuItem x:Name="NewWindow" Header="New Window" Click="NewWindow_Click"/>
+                <MenuItem x:Name="Homepage" Header="Homepage" Click="Homepage_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="Help">
+                <MenuItem x:Name="About" Header="About" Click="About_Click"/>
+                <MenuItem x:Name="Help" Header="Help" Click="Help_Click"/>
+                <MenuItem x:Name="BugReporter" Header="Bug Reporter" Click="BugReporter_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="0" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto" Margin="7,7,0,7">
+            <ScrollViewer.Background>
+                <SolidColorBrush Color="#FFDDDDDD"/>
+            </ScrollViewer.Background>
+            <StackPanel Orientation="Vertical" Margin="4">
+                
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Grid.Column="1" Margin="7">
+            <Grid.Background>
+                <SolidColorBrush Color="#FFEEEEEE"/>
+            </Grid.Background>
+        </Grid>
+
+        <Border Grid.Row="2" Grid.ColumnSpan="4">
+            <Border.Background>
+                <SolidColorBrush Color="#FFAAAAAA"/>
+            </Border.Background>
+            
+            <TextBlock Text="{Binding FooterText, UpdateSourceTrigger=PropertyChanged}" Margin="4,0, 0, 0"/>
+        </Border>
+    </Grid>
+</Window>
