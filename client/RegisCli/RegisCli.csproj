@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\regis-core\regis-core.csproj" />
+    <ProjectReference Include="..\RegisCore\RegisCore.csproj" />
   </ItemGroup>
 
 </Project>

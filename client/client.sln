@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "regis-core", "regis-core\regis-core.csproj", "{891FA1CD-4F7F-40B8-AE26-87BBCE86AFE1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RegisCore", "RegisCore\RegisCore.csproj", "{891FA1CD-4F7F-40B8-AE26-87BBCE86AFE1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "regis-cli", "regis-cli\regis-cli.csproj", "{C0F3A506-C278-41E3-BC17-4944360163AC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RegisCli", "RegisCli\RegisCli.csproj", "{C0F3A506-C278-41E3-BC17-4944360163AC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Regis", "Regis\Regis.csproj", "{E3BA1CA9-6D87-41E7-9C7E-1A4E6A4982B6}"
 EndProject
