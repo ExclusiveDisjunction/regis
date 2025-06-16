@@ -5,6 +5,7 @@
     <RootNamespace>Regis</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>regis_core</AssemblyName>
   </PropertyGroup>
 
 </Project>

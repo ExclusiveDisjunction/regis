@@ -2,7 +2,7 @@
 using System.Data;
 using System.Windows;
 
-namespace Regis {
+namespace Regis.Gui {
     /// <summary>
     /// Interaction logic for App.xaml
     /// </summary>

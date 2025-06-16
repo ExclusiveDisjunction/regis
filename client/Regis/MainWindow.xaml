@@ -1,9 +1,9 @@
-﻿<Window x:Class="Regis.MainWindow"
+﻿<Window x:Class="Regis.Gui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:Regis"
+        xmlns:local="clr-namespace:Regis.Gui"
         mc:Ignorable="d"
         Title="Regis" Height="450" Width="800">
 
@@ -42,6 +42,17 @@
                 <MenuItem x:Name="ConnDetails" Header="Connection Details" Click="ConnDetails_Click"/>
             </MenuItem>
 
+            <MenuItem Header="Editor">
+                <MenuItem Header="Open Editor">
+                    
+                </MenuItem>
+
+                <MenuItem Header="Popout Current Editor" x:Name="PopoutCurrentEditor" Click="PopoutCurrentEditor_Click"/>
+
+                <MenuItem Header="Close Current Editor" x:Name="CloseCurrEditor" Click="CloseCurrEditor_Click"/>
+                <MenuItem Header="Close All Editors" x:Name="CloseAllEditor" Click="CloseAllEditor_Click"/>
+            </MenuItem>
+
             <MenuItem Header="Window">
                 <MenuItem x:Name="NewWindow" Header="New Window" Click="NewWindow_Click"/>
                 <MenuItem x:Name="Homepage" Header="Homepage" Click="Homepage_Click"/>
@@ -58,7 +69,7 @@
             <ScrollViewer.Background>
                 <SolidColorBrush Color="#FFDDDDDD"/>
             </ScrollViewer.Background>
-            <StackPanel Orientation="Vertical" Margin="4">
+            <StackPanel x:Name="EditorButtonHost" Orientation="Vertical" Margin="4">
                 
             </StackPanel>
         </ScrollViewer>
@@ -67,6 +78,10 @@
             <Grid.Background>
                 <SolidColorBrush Color="#FFEEEEEE"/>
             </Grid.Background>
+
+            <Grid x:Name="EditorHost" Margin="4">
+                
+            </Grid>
         </Grid>
 
         <Border Grid.Row="2" Grid.ColumnSpan="4">

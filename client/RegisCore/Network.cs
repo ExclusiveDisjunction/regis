@@ -12,16 +12,18 @@ public static class Network {
     /// Represents the default buffer size used for sending.
     /// </summary>
     private const int DefaultBufferSize = 4096;
-    
+
     /// <summary>
     /// Sends a byte buffer over the network. This data will be sent with a pre-flight of the buffer length.
-    /// Data will be sent in <param name="packetSize"/> chunks.
-    /// If the data is not a perfect multiple of <param name="packetSize"/>, then the last chuck may have less than <param name="packetSize"/> bytes.
+    /// Note that exceptions may vary based on deriving classes of <seealso cref="Stream"/>. Please refer to the classes documentation for <seealso cref="Stream"/>.
+    /// Data will be sent in <see href="packetSize"/> chunks.
+    /// If the data is not a perfect multiple of <see href="packetSize"/>, then the last chuck may have less than <see href="packetSize"/> bytes.
     /// </summary>
     /// <param name="source">The data to send over the stream.</param>
     /// <param name="over">Any stream to send the data over.</param>
     /// <param name="packetSize">The number of bytes to try and send in waves.</param>
     /// <param name="cancellationToken">A token passed to cancel the operation.</param>
+    /// <exception cref="OperationCanceledException">If the operation is cancelled.</exception>
     public static async Task SendBuffer(byte[] source, Stream over, int packetSize = DefaultBufferSize, CancellationToken cancellationToken = default) {
         int dataLength = source.Length;
         byte[] encodedLength = BitConverter.GetBytes(dataLength);
@@ -51,6 +53,8 @@ public static class Network {
     /// <param name="packetSize">The number of bytes to try and collect in each wave.</param>
     /// <param name="cancellationToken">A token passed to cancel the operation.</param>
     /// <returns>The bytes sent over the network.</returns>
+    /// <exception cref="EndOfStreamException">Occurs if the stream cannot read the data that is expected. This can occur when the header is being read. If the length is not 4 bytes, then this will occur.</exception>
+    /// <exception cref="OperationCanceledException">Occurs if the operation is cancelled.</exception>
     public static async ValueTask<List<byte>> ReceiveBuffer(Stream over, int packetSize = DefaultBufferSize, CancellationToken cancellationToken = default) {
         byte[] lengthBuffer = new byte[sizeof(int)];
         await over.ReadExactlyAsync(lengthBuffer.AsMemory(0, sizeof(int)), cancellationToken).ConfigureAwait(false);

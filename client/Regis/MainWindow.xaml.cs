@@ -10,7 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace Regis {
+namespace Regis.Gui {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -83,6 +83,18 @@ namespace Regis {
         }
 
         private void Quit_Click(object sender, RoutedEventArgs e) {
+
+        }
+
+        private void CloseCurrEditor_Click(object sender, RoutedEventArgs e) {
+
+        }
+
+        private void PopoutCurrentEditor_Click(object sender, RoutedEventArgs e) {
+
+        }
+
+        private void CloseAllEditor_Click(object sender, RoutedEventArgs e) {
 
         }
     }
