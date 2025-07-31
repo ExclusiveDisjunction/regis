@@ -1,12 +1,36 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "C:\\Users\\exdisj\\prog\\regis\\client\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{E3BA1CA9-6D87-41E7-9C7E-1A4E6A4982B6}|Regis\\Regis.csproj|c:\\users\\exdisj\\prog\\regis\\client\\regis\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{E3BA1CA9-6D87-41E7-9C7E-1A4E6A4982B6}|Regis\\Regis.csproj|solutionrelative:regis\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "C:\\Users\\exdisj\\prog\\regis\\client\\Regis\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "Regis\\MainWindow.xaml",
+              "ToolTip": "C:\\Users\\exdisj\\prog\\regis\\client\\Regis\\MainWindow.xaml",
+              "RelativeToolTip": "Regis\\MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-06-16T02:55:36.56Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }

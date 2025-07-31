@@ -1,12 +1,37 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "C:\\Users\\exdisj\\prog\\regis\\client\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{891FA1CD-4F7F-40B8-AE26-87BBCE86AFE1}|RegisCore\\RegisCore.csproj|c:\\users\\exdisj\\prog\\regis\\client\\regiscore\\savedconnection.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{891FA1CD-4F7F-40B8-AE26-87BBCE86AFE1}|RegisCore\\RegisCore.csproj|solutionrelative:regiscore\\savedconnection.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SavedConnection.cs",
+              "DocumentMoniker": "C:\\Users\\exdisj\\prog\\regis\\client\\RegisCore\\SavedConnection.cs",
+              "RelativeDocumentMoniker": "RegisCore\\SavedConnection.cs",
+              "ToolTip": "C:\\Users\\exdisj\\prog\\regis\\client\\RegisCore\\SavedConnection.cs",
+              "RelativeToolTip": "RegisCore\\SavedConnection.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-22T03:46:09.333Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }
