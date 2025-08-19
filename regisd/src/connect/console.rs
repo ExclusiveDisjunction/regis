@@ -8,7 +8,7 @@ use tokio::{
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use exdisj::{log_debug, log_error, log_info, msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
+use exdisj::{log_debug, log_error, log_info, io::msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
 use common::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
@@ -82,10 +82,8 @@ pub async fn client_worker(mut conn: Receiver<ConsoleComm>, (mut source, send): 
         }
     }
 
-    if let Some(to_send) = to_send {
-        if let Err(e) = send.send(to_send).await {
-            log_error!("(Console Worker) Unable to send message to console manager ('{e}')");
-        }
+    if let Some(to_send) = to_send && let Err(e) = send.send(to_send).await {
+        log_error!("(Console Worker) Unable to send message to console manager ('{e}')");
     }
 }
 

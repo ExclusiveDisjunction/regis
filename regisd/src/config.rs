@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
 use common::loc::CLIENTS_PORT;
-use exdisj::config::{ConfigBase, ConfigurationProvider};
+use exdisj::io::config::{ConfigBase, ConfigurationProvider};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Configuration {

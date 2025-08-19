@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 use serde::{Serialize, Deserialize};
 
-pub use exdisj::metric::{Utilization, BinaryNumber, BinaryScale, PrettyPrinter};
+pub use exdisj::io::metric::{Utilization, BinaryNumber, BinaryScale, PrettyPrinter};
 
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
 

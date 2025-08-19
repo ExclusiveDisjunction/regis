@@ -8,7 +8,7 @@ name = "regisd"
 path = "src/main.rs"
 
 [dependencies]
-exdisj = { path="../../exdisj-rs", features=["async"] }
+exdisj = { path="../../exdisj-rs", features=["async", "json", "auth"] }
 common = { path="../common" }
 
 serde = {version = "1.0.218", features = ["derive"]}

@@ -1,5 +1,5 @@
 use super::{collect::CollectedMetrics, storage::LimitedQueue};
-use exdisj::lock::{RwProvider, RwProviderAccess, ProtectedAccess};
+use exdisj::io::lock::{RwProvider, RwProviderAccess, ProtectedAccess};
 use std::sync::{Arc, RwLock};
 
 use lazy_static::lazy_static;

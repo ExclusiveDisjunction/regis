@@ -8,7 +8,7 @@ pub mod setup;
 pub mod sess;
 
 use exdisj::{log_critical, log_debug, log_info, log_warning};
-use exdisj::lock::OptionRwProvider;
+use exdisj::io::lock::OptionRwProvider;
 use common::loc::DAEMON_CONFIG_PATH;
 
 use config::CONFIG;

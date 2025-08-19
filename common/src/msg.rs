@@ -1,7 +1,9 @@
 use serde::{Serialize, Deserialize};
 
-pub use exdisj::msg::*;
-use exdisj::metric::PrettyPrinter;
+use exdisj::io::{
+    msg::{MessageBasis, ResponseMessage, RequestMessage, Acknoledgement},
+    metric::PrettyPrinter
+};
 
 use crate::metric::CollectedMetrics;
 

@@ -26,12 +26,12 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    lock::OptionRwProvider, 
     log_critical, 
     log_debug, 
     log_error, 
     log_info, 
-    log_warning, 
+    log_warning,
+    io::lock::OptionRwProvider,  
     task_util::{
         recv, 
         send, 

@@ -6,7 +6,7 @@ use collect::collect_all_snapshots;
 use io::METRICS;
 
 use exdisj::{log_info, log_warning, log_error};
-use exdisj::lock::OptionRwProvider;
+use exdisj::io::lock::OptionRwProvider;
 use tokio::select;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::interval;
