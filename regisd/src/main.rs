@@ -7,7 +7,7 @@ pub mod failure;
 pub mod setup;
 pub mod sess;
 
-use exdisj::{log_critical, log_debug, log_info, log_warning};
+use exdisj::{log_critical, log_info, log_warning};
 use exdisj::io::lock::OptionRwProvider;
 use common::loc::DAEMON_CONFIG_PATH;
 
@@ -26,35 +26,39 @@ fn run() -> Result<(), DaemonFailure> {
         return Err( DaemonFailure::SetupDirectoryError );
     }
 
-    if !setup::start_logger(&cli) {
-        eprintln!("Unable to start logger.");
-        return Err( DaemonFailure::LoggerError );
-    }
+    let logger = match setup::start_logger(&cli) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Unable to crate a logger: '{e}'");
+            return Err( DaemonFailure::LoggerError );
+        }
+    };
 
-    log_info!("Launching regisd...");
+    log_info!(&logger, "Launching regisd...");
 
-    log_debug!("Loading configuration");
+    log_info!(&logger, "Loading configuration");
     if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
         if cli.override_config {
             log_warning!(
+                &logger,
                 "Unable to load configuration, creating default for this initalization. Error: '{:?}'",
                 e
             );
             CONFIG.set_to_default();
         }
         else {
-            log_critical!("The configuration was invalid, reason '{:?}'\n. Since the configuration could not be defaulted, the program will exit.\nTo reset the configuration, run the command with --override_config.", e);
+            log_critical!(&logger, "The configuration was invalid, reason '{:?}'\n. Since the configuration could not be defaulted, the program will exit.\nTo reset the configuration, run the command with --override-config.", e);
             return Err( DaemonFailure::ConfigurationError );
         }
     }
-    log_info!("Configuration loaded.");
+    log_info!(&logger, "Configuration loaded.");
 
     let result = catch_unwind(|| {
         if cli.daemon {
-            setup::run_as_daemon(cli)
+            setup::run_as_daemon(&logger, cli)
         }
         else {
-            setup::begin_runtime(cli)
+            setup::begin_runtime(&logger, cli)
         }
     });
 

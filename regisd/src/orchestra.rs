@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::{
     select,
     signal::unix::{signal, Signal, SignalKind},
@@ -26,22 +28,7 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    log_critical, 
-    log_debug, 
-    log_error, 
-    log_info, 
-    log_warning,
-    io::lock::OptionRwProvider,  
-    task_util::{
-        recv, 
-        send, 
-        shutdown, 
-        DuplexTask, 
-        RestartStatusBase, 
-        RestartableTask, 
-        SimplexTask, 
-        StartableTask
-    }
+    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_error, log_info, log_warning, task::{RestartError, Task}
 };
 
 /// The amount of time between each task "poll".
@@ -49,19 +36,10 @@ pub const TASK_CHECK_TIMEOUT: u64 = 30;
 /// The buffer size for a default channel buffer.
 pub const TASKS_DEFAULT_BUFFER: usize = 10;
 
-async fn try_send_or_restart<T>(handle: &mut RestartableTask<T>, value: T::Msg) -> bool 
-where T: StartableTask,
-T::Output: RestartStatusBase{
-    if let Err(e) = send(handle, value).await {
-        let result = handle.restart().await;
-        log_info!("(Orch) When sending message to task, the task was dead (Error: '{e}'). Could it be restarted? '{}'", result.is_ok());
-
-        result.is_err()
-    }
-    else {
-        true
-    }
-}
+pub const ORCH_PREFIX: Prefix = Prefix::new_const("Orch", ConsoleColor::Blue);
+pub const CONS_PREFIX: Prefix = Prefix::new_const("Console", ConsoleColor::Cyan);
+pub const CLNT_PREFIX: Prefix = Prefix::new_const("Client", ConsoleColor::Magenta);
+pub const METR_PREFIX: Prefix = Prefix::new_const("Metric", ConsoleColor::Green);
 
 struct SignalBundle {
     term: Signal,
@@ -70,22 +48,47 @@ struct SignalBundle {
 }
 
 pub struct Orchestrator {
-    client_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
-    metric_thread: RestartableTask<SimplexTask<SimpleComm, WorkerTaskResult>>,
-    console_thread: RestartableTask<DuplexTask<ConsoleComm, WorkerTaskResult>>,
-    options: Options
+    client: Task<SimpleComm, WorkerTaskResult>,
+    metric: Task<SimpleComm, WorkerTaskResult>,
+    console: Task<ConsoleComm, WorkerTaskResult>,
+
+    options: Options,
+    log: ChanneledLogger
 }
 impl Orchestrator {
-    pub fn initialize(options: setup::Options) -> Self {
-        let client_thread = RestartableTask::start(client_entry, TASKS_DEFAULT_BUFFER, 5);
-        let console_thread = RestartableTask::start(console_entry, TASKS_DEFAULT_BUFFER, 5);
-        let metric_thread = RestartableTask::start(metrics_entry, TASKS_DEFAULT_BUFFER, 5);
+    pub fn initialize(log: &Logger, options: setup::Options) -> Self {
+        let my_log = log.make_channel(ORCH_PREFIX.clone());
+        let log_arc = Arc::new(my_log);
+
+        let mut client = Task::new(async |comm|{
+            let logger = log_arc.make_channel(CLNT_PREFIX.clone());
+            client_entry(logger, comm).await
+        }, TASKS_DEFAULT_BUFFER, true);
+
+        let mut console = Task::new(async |comm| {
+            let logger = my_log.make_channel(CONS_PREFIX.clone());
+            console_entry(logger, comm).await
+        }, TASKS_DEFAULT_BUFFER, false);
+
+        let mut metric = Task::new(async |comm| {
+            let logger = my_log.make_channel(METR_PREFIX.clone());
+            metrics_entry(logger, comm).await
+        }, TASKS_DEFAULT_BUFFER, true);
+
+        client.with_logger(&my_log);
+        console.with_logger(&my_log);
+        metric.with_logger(&my_log);
+
+        client.with_restarts(5);
+        console.with_restarts(5);
+        metric.with_restarts(5);
 
         Self {
-            client_thread,
-            console_thread,
-            metric_thread,
-            options
+            client,
+            console,
+            metric,
+            options,
+            log: my_log
         }
     } 
 
@@ -100,49 +103,59 @@ impl Orchestrator {
     }
 
     async fn poll(&mut self) -> bool {
-        log_debug!("(Orch) Timer tick activated");
-        log_info!("(Orch) Beginning polls...");
+        log_info!(&self.log, "Beginning polls...");
         let mut result: bool = true;
 
-        result &= self.client_thread.poll_and_restart().await.log_event("client");
-        result &= self.metric_thread.poll_and_restart().await.log_event("metrics");
-        result &= self.console_thread.poll_and_restart().await.log_event("console");
+        result &= self.client.poll_and_restart().await.is_ok();
+        result &= self.console.poll_and_restart().await.is_ok();
+        result &= self.metric.poll_and_restart().await.is_ok();
 
         if !result {
-            log_info!("(Orch) Polls complete, failure.");
-            log_critical!("Unable to restart one or more worker threads, shutting down all threads.");
+            log_info!(&self.log, "Polls complete, failure.");
+            log_critical!(&self.log, "Unable to restart one or more worker threads, shutting down all threads.");
             return false;
         }
 
-        log_info!("(Orch) Polls complete, success.");
+        log_info!(&self.log, "Polls complete, success.");
         true
     }
 
     async fn reload_configuration(&mut self) -> Result<(), DaemonFailure> {
         if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
-            log_error!("(Orch) Unable to reload configuration, due to '{:?}'.", e);
+            log_error!(&self.log, "Unable to reload configuration, due to '{:?}'.", e);
             if self.options.override_config {
-                log_info!("By request, the configuration will be reset to defaults.");
+                log_info!(&self.log, "By request, the configuration will be reset to defaults.");
                 CONFIG.set_to_default();
             }
             else {
-                log_critical!("(Orch) Configuration could not be updated, terminating.");
+                log_critical!(&self.log, "Configuration could not be updated, terminating.");
     
                 return Err( DaemonFailure::ConfigurationError );
             }
         }
     
-        let mut send_failure: bool = false;
-        send_failure &= try_send_or_restart(&mut self.console_thread, ConsoleComm::ReloadConfiguration).await;
-        send_failure &= try_send_or_restart(&mut self.metric_thread, SimpleComm::ReloadConfiguration).await;
-        send_failure &= try_send_or_restart(&mut self.client_thread, SimpleComm::ReloadConfiguration).await;
+        let results: [Option<RestartError>; 3] = [
+            self.console.send_or_restart(ConsoleComm::ReloadConfiguration, true).await.err(),
+            self.metric.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err(),
+            self.client.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err()
+        ];
+
+        let send_failure = results.iter().all(|x| {
+            if let Some(e) = x.as_ref() {
+                log_critical!(&self.log, "Unable to send out configuration reload message due to error: {}", e);
+                false
+            }
+            else {
+                true
+            }
+        });
         
         if send_failure {
-            log_critical!("(Orch) Unable to send out configuration reloading messages, as some threads were dead and could not be restarted.");
+            log_critical!(&self.log, "Due to config failures, the orch will now shut down.");
             Err( DaemonFailure::ConfigurationError )
         }
         else {
-            log_info!("(Orch) Configurations reloaded.");
+            log_info!(&self.log, "Configurations reloaded.");
             Ok(())
         }
     }
@@ -152,19 +165,19 @@ impl Orchestrator {
         // This thread will do polls to determine if threads need to be spanwed.
 
         //This needs a timer thread. At a periodic time, this timer will signal this main thread to send out poll requests. It only works with the unit type. If it receives a message, it will immediatley exit.
-        log_info!("(Orch) Spawning timer & SIGTERM threads...");
+        log_info!(&self.log, "Spawning timer & SIGTERM threads...");
         let mut timer = interval(Duration::from_secs(TASK_CHECK_TIMEOUT));
 
         //Get the signals to await later on, to listen to the OS.
         let mut signals = match Self::get_signals() {
             Ok(v) => v,
             Err(e) => {
-                log_critical!("(Orch) Unable to generate SIGTERM, SIGINT, or SIGHUP signal handlers (Error: '{e}'). Aborting.");
+                log_critical!(&self.log, "Unable to generate SIGTERM, SIGINT, or SIGHUP signal handlers (Error: '{e}'). Aborting.");
                 return Err( DaemonFailure::SignalFailure );
             }
         };
 
-        log_info!("(Orch) Utility signals/tasks loaded.");
+        log_info!(&self.log, "Utility signals/tasks loaded.");
 
         let mut err: Option<DaemonFailure> = None;
         // Critical code
@@ -177,48 +190,48 @@ impl Orchestrator {
                     }
                 },
                 _ = signals.term.recv() => {
-                    log_info!("(Orch) SIGTERM message from OS received, shutting down threads.");
+                    log_info!(&self.log, "SIGTERM message from OS received, shutting down threads.");
                     break;
                 },
                 _ = signals.int.recv() => {
-                    log_info!("(Orch) SIGINT message from OS received, shutting down threads.");
+                    log_info!(&self.log, "SIGINT message from OS received, shutting down threads.");
                     break;
                 }
                 _ = signals.hup.recv() => {
-                    log_info!("(Orch) SIGHUP message received from OS, reloading configuration.");
+                    log_info!(&self.log, "SIGHUP message received from OS, reloading configuration.");
                     if let Err(e) = self.reload_configuration().await {
                         err = Some(e);
                         break;
                     }
-                    log_info!("(Orch) Configuration reloaded.");
+                    log_info!(&self.log, "Configuration reloaded.");
                 }
-                m = recv(&mut self.console_thread) => {
+                m = self.console.force_recv() => {
                     if let Some(m) = m {
                         match m {
                             ConsoleComm::ReloadConfiguration => {
-                                log_info!("(Orch) By request of console thread, the configuration is being reloaded...");
+                                log_info!(&self.log, "By request of console thread, the configuration is being reloaded...");
                                 if let Err(e) = self.reload_configuration().await {
                                     err = Some(e);
                                     break;
                                 }
-                                log_info!("(Orch) Configuration reloaded.");
+                                log_info!(&self.log, "Configuration reloaded.");
                             },
                             ConsoleComm::SystemShutdown => {
-                                log_info!("(Orch) By request of console thread, the system is to shutdown...");
-                                log_info!("(Orch) Shutting down threads...");
+                                log_info!(&self.log, "By request of console thread, the system is to shutdown...");
+                                log_info!(&self.log, "Shutting down threads...");
                                 break;
                             },
-                            v => log_warning!("(Orch) Got innapropriate request from console thread: '{v}'. Ignoring.")
+                            v => log_warning!(&self.log, "Got innapropriate request from console thread: '{v}'. Ignoring.")
                         }
                     }
                     else {
-                        log_info!("(Orch) Console thread unexpectedly closed. Attempting to restart...");
-                        if self.console_thread.restart().await.is_err() {
-                            log_critical!("Unable to restart console thread. Shutting down tasks...");
+                        log_info!(&self.log, "Console thread unexpectedly closed. Attempting to restart...");
+                        if self.console.restart(true).await.is_err() {
+                            log_critical!(&self.log, "Unable to restart console thread. Shutting down tasks...");
                             err = Some(DaemonFailure::UnexepctedError);
                             break;
                         }
-                        log_info!("(Orch) Console thread restarted.");
+                        log_info!(&self.log, "onsole thread restarted.");
                     }
                 }
             }
@@ -235,37 +248,35 @@ impl Orchestrator {
         }
     }
 
-    fn get_shutdown_msg(x: Result<Option<WorkerTaskResult>, JoinError>) -> String {
+    fn get_shutdown_msg(x: Result<WorkerTaskResult, JoinError>) -> String {
         match x {
-            Ok(v) => match v {
-                Some(v) => v.to_string(),
-                None => "Already Joined".to_string(),
-            },
+            Ok(v) => v.to_string(),
             Err(e) => format!("join error: '{e}'"),
         }
     }
 
     pub async fn shutdown(self) {
-        let shutdowns = vec![
-            shutdown(self.client_thread).await,
-            shutdown(self.console_thread).await,
-            shutdown(self.metric_thread).await
+        let shutdowns = [
+            Self::get_shutdown_msg(self.client.join().await),
+            Self::get_shutdown_msg(self.console.join().await),
+            Self::get_shutdown_msg(self.metric.join().await)
         ];
-        let mut iter = shutdowns.into_iter()
-            .map(Self::get_shutdown_msg);
 
         log_info!(
-            "(Orch) Client task shutdown with response '{}'",
-            iter.next().unwrap()
+            &self.log, 
+            "Client task shutdown with response '{}'",
+            shutdowns[0]
         );
         log_info!(
-            "(Orch) Console task shutdown with response '{}'",
-            iter.next().unwrap()
+            &self.log,
+            "Console task shutdown with response '{}'",
+            shutdowns[1]
         );
         log_info!(
-            "(Orch) Metric task shutdown with response '{}'",
-            iter.next().unwrap()
+            &self.log,
+            "Metric task shutdown with response '{}'",
+            shutdowns[2]
         );
-        log_info!("(Orch) Tasks shut down.");
+        log_info!(&self.log, "Tasks shut down.");
     }
 }

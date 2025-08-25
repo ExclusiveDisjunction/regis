@@ -1,7 +1,7 @@
 use exdisj::{
     log_critical, log_info,
     io::log::{
-        LOG,
+        Logger,
         LoggerLevel,
         LoggerRedirect
     }
@@ -54,9 +54,9 @@ pub struct Options {
     pub stderr: Option<String>
 }
 
-pub async fn start_orch(options: Options) -> Result<(), DaemonFailure> {
-    log_info!("Init complete, handling tasks to orchestrator");
-    let orch = Orchestrator::initialize(options);
+pub async fn start_orch(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
+    log_info!(log, "Init complete, handling tasks to orchestrator");
+    let orch = Orchestrator::initialize(log, options);
 
     let result = orch.run().await;
     CONFIG.save(DAEMON_CONFIG_PATH).map_err(|_| DaemonFailure::IOError)?;
@@ -64,21 +64,21 @@ pub async fn start_orch(options: Options) -> Result<(), DaemonFailure> {
     result
 }
 
-pub fn begin_runtime(options: Options) -> Result<(), DaemonFailure> {
+pub fn begin_runtime(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
     let rt = match Runtime::new() {
         Ok(v) => v,
         Err(e) => {
-            log_critical!("Unable to start tokio runtime '{e}'");
+            log_critical!(log, "Unable to start tokio runtime '{e}'");
             return Err( DaemonFailure::RuntimeFailure );
         }
     };
 
     rt.block_on( async {
-        start_orch(options).await
+        start_orch(log, options).await
     })
 }
 
-pub fn start_logger(options: &Options) -> bool {
+pub fn start_logger(options: &Options) -> std::io::Result<Logger> {
     let level: LoggerLevel;
     let redirect: LoggerRedirect;
     if cfg!(debug_assertions) || options.debug {
@@ -97,10 +97,10 @@ pub fn start_logger(options: &Options) -> bool {
     let today = chrono::Local::now();
     let logger_path = format!("{}{:?}-run.log", DAEMON_LOG_DIR, today);
 
-    LOG.open(logger_path, level, redirect).is_ok()
+    Logger::new(logger_path, level, redirect)
 }
 
-pub fn create_paths() -> Result<(), std::io::Error> {
+pub fn create_paths() -> std::io::Result<()> {
     create_dir_all(TOTAL_DIR)?;
     create_dir_all(DAEMON_LOG_DIR)?;
     create_dir_all(CONSOLE_LOG_DIR)?;
@@ -112,7 +112,7 @@ pub fn create_paths() -> Result<(), std::io::Error> {
     Ok( () )
 }
 
-pub fn run_as_daemon(options: Options) -> Result<(), DaemonFailure> {
+pub fn run_as_daemon(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
     let stdout_path = options.stdout.as_deref().unwrap_or(STD_OUT_PATH);
     let stderr_path = options.stderr.as_deref().unwrap_or(STD_ERR_PATH);
 
@@ -123,12 +123,12 @@ pub fn run_as_daemon(options: Options) -> Result<(), DaemonFailure> {
     let (stdout, stderr) = match constructor() {
         Ok(v) => v,
         Err(e) => {
-            log_critical!("Unable to construct the stdout and/or stderr files at '{}' and '{}', respectivley. Reason: '{e}'", stdout_path, stderr_path);
+            log_critical!(log, "Unable to construct the stdout and/or stderr files at '{}' and '{}', respectivley. Reason: '{e}'", stdout_path, stderr_path);
             return Err( DaemonFailure::SetupStreamError );
         }
     };
 
-    log_info!("Starting regisd as a daemon...");
+    log_info!(log, "Starting regisd as a daemon...");
 
     let daemonize = Daemonize::new()
         .pid_file(PID_PATH)
@@ -139,14 +139,14 @@ pub fn run_as_daemon(options: Options) -> Result<(), DaemonFailure> {
 
     match daemonize.start() {
         Ok(_) => {
-            log_info!("Daemon loaded. Running process.");
-            let result = begin_runtime(options);
-            log_info!("Daemon finished.");
+            log_info!(log, "Daemon loaded. Running process.");
+            let result = begin_runtime(log, options);
+            log_info!(log, "Daemon finished.");
 
             result
         }
         Err(e) => {
-            log_critical!("Unable to start daemon '{e}.");
+            log_critical!(log, "Unable to start daemon '{e}.");
             Err( DaemonFailure::DaemonizeFailure )
         }
     }

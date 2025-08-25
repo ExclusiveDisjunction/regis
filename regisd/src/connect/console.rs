@@ -8,13 +8,15 @@ use tokio::{
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use exdisj::{log_debug, log_error, log_info, io::msg::decode_request_async, task_util::{poll, shutdown_tasks, ArgSimplexTask, TaskBasis}};
-use common::{msg::ConsoleRequests, loc::{TOTAL_DIR, COMM_PATH}};
+use exdisj::io::{log::{ChanneledLogger, ConsoleColor, Prefix}, msg::send_response_async};
+use exdisj::{io::msg::{decode_request_async, send_message_async}, log_debug, log_error, log_info};
+use exdisj::task::{ChildComm, TaskMessage, TaskOnce};
+use common::{msg::{ConsoleResponses, ConsoleRequests}, loc::{TOTAL_DIR, COMM_PATH}};
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
-async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
+async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, WorkerTaskResult> {
     match try_exists(COMM_PATH).await {
         Ok(exists) => {
             if exists {
@@ -22,7 +24,7 @@ async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
             }
         },
         Err(e) => {
-            log_error!("(Console) Unable to determine location of the socket file '{e}'");
+            log_error!(logger, "Unable to determine location of the socket file '{e}'");
             return Err(WorkerTaskResult::Sockets);
         }
     }
@@ -34,13 +36,13 @@ async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
     let listener = match UnixListener::bind(COMM_PATH) {
         Ok(v) => v,
         Err(e) => {
-            log_error!("(Console) Unable to open connection to server comm, '{e}'");
+            log_error!(logger, "Unable to open connection to server comm, '{e}'");
             return Err(WorkerTaskResult::Sockets)
         }
     };
 
     if let Err(e) = fs::set_permissions(COMM_PATH, fs::Permissions::from_mode(0o777)) {
-        log_error!("(Console) Unable to set permissions for the server communication, '{e}'");
+        log_error!(logger, "Unable to set permissions for the server communication, '{e}'");
         return Err(WorkerTaskResult::Sockets);
     }
 
@@ -48,155 +50,129 @@ async fn establish_listener() -> Result<UnixListener, WorkerTaskResult> {
 }
 
 /// Represents the actual tasks carried out by connected consoles.
-pub async fn client_worker(mut conn: Receiver<ConsoleComm>, (mut source, send): (UnixStream, Sender<ConsoleComm>)) {
-    let mut to_send: Option<ConsoleComm> = None;
-
+pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleRequests>) {
     loop {
         select! {
-            v = conn.recv() => { //Something from parent Console
+            v = comm.recv() => { //Something from parent Console
                 match v {
-                    Some(v) => match v {
-                        ConsoleComm::Poll | ConsoleComm::ReloadConfiguration | ConsoleComm::Auth => {
-                            if v == ConsoleComm::Poll {
-                                log_info!("(Console Worker) Someone was just saying hi!");
-                            }
-                        }
-                        ConsoleComm::SystemShutdown | ConsoleComm::Kill => break
-                    },
-                    None => return
+                    TaskMessage::Poll | TaskMessage::Inner(_) => continue,
+                    TaskMessage::Kill => return
                 }
             }
             raw_msg = decode_request_async(&mut source) => {
                 let msg: ConsoleRequests = match raw_msg {
                     Ok(v) => v,
                     Err(e) => {
-                        log_error!("(Console Worker) Unable to decode message from bound client '{e}'");
+                        log_error!(&logger, "Unable to decode message from bound client '{e}'");
                         return;
                     }
                 };
 
-                to_send = Some(ConsoleComm::from(msg));
-
-                break;
+                if let Err(e) = sender.send(msg).await {
+                    log_error!(&logger, "Unable to send message to console manager: '{e}'.");
+                    return;
+                }
+                
+                if let Err(e) = send_response_async(ConsoleResponses::Ok, &mut source).await {
+                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
+                    return;
+                }
             }
         }
-    }
-
-    if let Some(to_send) = to_send && let Err(e) = send.send(to_send).await {
-        log_error!("(Console Worker) Unable to send message to console manager ('{e}')");
-    }
+    };
 }
 
-pub async fn console_entry(
-    (orch, mut recv): (Sender<ConsoleComm>, Receiver<ConsoleComm>),
-) -> WorkerTaskResult {
-    log_info!("(Console) Starting listener...");
-    let listener = match establish_listener().await {
+pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleComm>) -> WorkerTaskResult {
+    log_info!(&logger, "Starting listener...");
+    let listener = match establish_listener(&logger, ).await {
         Ok(v) => v,
         Err(e) => {
-            log_error!("(Console) Unable to start listener. Aborting.");
+            log_error!(&logger, "Unable to start listener. Aborting.");
             return e
         }
     };
-    log_debug!("(Console) Listener started.");
+    log_debug!(&logger, "Listener started.");
 
-    let (send, mut worker_recv) = channel::<ConsoleComm>(5);
-    let mut active: Vec<ArgSimplexTask<ConsoleComm, (), (UnixStream, Sender<ConsoleComm>)>> = vec![];
+    let (send, mut worker_recv) = channel::<ConsoleRequests>(5);
+    let mut active: Vec<TaskOnce<(), ()>> = vec![];
 
     let mut result_status = WorkerTaskResult::Ok;
     loop {
         select! {
-            v = recv.recv() => {
-                let v = match v {
-                    Some(v) => v,
-                    None => {
-                        log_error!(
-                            "(Console) Message could not be received from Orch. Shutting down, exit code 'Failure'."
-                        );
-                        return WorkerTaskResult::Failure;
-                    }
-                };
-                
+            v = comm.recv() => {
                 match v {
-                    ConsoleComm::Poll => {
+                    TaskMessage::Poll => {
                         let mut result: bool = true;
                         let old_size = active.len();
 
                         let mut new_active = Vec::with_capacity(old_size);
                         let mut was_dead: usize = 0;
 
-                        log_info!("(Console) Poll started...");
+                        log_info!(&logger, "Poll started...");
                         for (i, mut task) in active.into_iter().enumerate() {
-                            if !task.is_running() {
-                                log_debug!("(Console) Poll of task {i} determined it was dead.");
+                            if !task.poll().await {
+                                log_debug!(&logger, "Poll of task {i} determined it was dead.");
                                 was_dead += 1;
                                 continue;
                             }
 
-                            let current = poll(&mut task).await;
-
-                            if !current {
-                                log_debug!("(Console) Poll of task {i} failed.");
-                                result = false;
-                                continue;
-                            }
-
-                            log_debug!("(Console) Poll of task {i} passed.");
+                            log_debug!(&logger, "Poll of task {i} passed.");
 
                             new_active.push(task);
                         }
 
                         active = new_active;
-                        log_info!("(Console) Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
+                        log_info!(&logger, "Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
                     }
-                    ConsoleComm::Kill | ConsoleComm::SystemShutdown => {
-                        log_info!("(Console) got shutdown message from Orch.");
+                    TaskMessage::Kill => {
+                        log_info!(&logger, "Got shutdown message from Orch.");
                         break;
                     }
-                    ConsoleComm::ReloadConfiguration | ConsoleComm::Auth => continue
+                    TaskMessage::Inner(_) => continue
                 }
             },
             conn = listener.accept() => {
                 let conn = match conn {
                     Ok(v) => v,
                     Err(e) => {
-                        log_error!("(Console) Stream could not be accepted from UnixListener '{}'.", e);
+                        log_error!(&logger, "Stream could not be accepted from UnixListener '{}'.", e);
                         result_status = WorkerTaskResult::Failure;
                         break;
                     }
                 };
 
                 let their_sender = send.clone();
-                log_info!("(Console) Accepted connection from '{:?}'", &conn.1);
+                log_info!(&logger, "Accepted connection from '{:?}'", &conn.1);
 
+                let prefix = Prefix::new(format!("Console Worker {}", active.len()), ConsoleColor::Yellow);
+                let their_logger = logger.make_channel(prefix);
+                let their_sender = send.clone();
                 active.push(
-                    ArgSimplexTask::start(client_worker, 10, (conn.0, their_sender))
-                );
+                    TaskOnce::new(async move |comm| {
+                        console_worker(their_logger, comm, conn.0, their_sender).await
+                    }, 5, true)
+                )
             },
             msg = worker_recv.recv() => {
                 match msg {
                     Some(v) => {
-                        if matches!(v, ConsoleComm::Poll) {
-                            continue;
-                        }
-
-                        // The orch will not listen to ConsoleComm::Kill, so we convert it to SystemShutdown.
-                        let v = if matches!(v, ConsoleComm::Kill) {
-                            ConsoleComm::SystemShutdown
-                        }
-                        else {
-                            v
+                        log_info!(&logger, "Got message '{:?}' from worker thread.", v);
+                        let to_orch = match v {
+                            ConsoleRequests::Shutdown => ConsoleComm::SystemShutdown,
+                            ConsoleRequests::Auth => continue,
+                            ConsoleRequests::Poll => continue,
+                            ConsoleRequests::Config => ConsoleComm::ReloadConfiguration
                         };
-
-                        log_info!("(Console) Got message '{}' from worker thread. Sending to orch.", v);
-                        if let Err(e) = orch.send(v).await {
-                            log_error!("(Console) Unable to send message to the orch '{e}'.");
+                        log_info!(&logger, "Sending {to_orch} to orch");
+                        
+                        if !comm.force_send(to_orch).await {
+                            log_error!(&logger, "Unable to send message to the orch.");
                             result_status = WorkerTaskResult::Failure;
                             break;
                         }
                     }
                     None => {
-                        log_error!("(Console) Worker receiver could not get message.");
+                        log_error!(&logger, "Worker receiver could not get message.");
                         result_status = WorkerTaskResult::Failure;
                         break;
                     }
@@ -205,20 +181,24 @@ pub async fn console_entry(
         }
     }
 
-    log_debug!("(Console) Closing down tasks.");
+    log_debug!(&logger, "Closing down tasks.");
 
-    let result = shutdown_tasks(active).await;
+    let mut result = Vec::with_capacity(active.len());
+    for task in active {
+        result.push(task.shutdown(true, &logger).await);
+    }
     let total = result.len();
     let ok = result.into_iter()
-    .map(|x| {
-        match x {
-            Ok(v) => v.is_some(),
-            Err(e) => !e.is_panic()
-        }
-    })
-    .fold(0usize, |acc, x| if x { acc + 1} else { acc } );
-    log_info!("(Console) {ok}/{total} tasks joined with non-panic errors.");
+        .map(|x| {
+            match x {
+                Ok(_) => true,
+                Err(e) => !e.is_fatality()
+            }
+        })
+        .fold(0usize, |acc, x| if x { acc + 1 } else { acc } );
 
-    log_info!("(Console) Exiting task, result '{}'", &result_status);
+    log_info!(&logger, "{ok}/{total} tasks joined with non-panic errors.");
+
+    log_info!(&logger, "Exiting task, result '{}'", &result_status);
     result_status
 }

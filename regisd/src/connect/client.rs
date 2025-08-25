@@ -1,12 +1,12 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
+use exdisj::io::log::{Prefix, ChanneledLogger, ConsoleColor};
 use exdisj::io::msg::{decode_request_async, send_response_async, Acknoledgement, HttpCode};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
-use tokio::sync::mpsc::Receiver;
 
-use exdisj::task_util::{poll, shutdown_tasks, ArgSimplexTask, KillMessage, PollableMessage, TaskBasis};
+use exdisj::task::{ChildComm, TaskMessage, TaskOnce};
 use exdisj::{log_debug, log_error, log_info, log_warning};
 use exdisj::io::lock::OptionRwProvider;
 
@@ -15,40 +15,25 @@ use crate::metric::collect::collect_all_snapshots;
 use crate::metric::io::METRICS;
 use crate::msg::{SimpleComm, WorkerTaskResult};
 
-pub enum WorkerComm {
-    Kill,
-    Poll
-}
-impl PollableMessage for WorkerComm {
-    fn poll() -> Self {
-        Self::Poll
-    }
-}
-impl KillMessage for WorkerComm {
-    fn kill() -> Self {
-        Self::Kill
-    }
-}
-
-async fn setup_listener(addr: Ipv4Addr, port: &mut u16, max_clients: &mut usize, old_listener: Option<&mut TcpListener>) -> Result<Option<TcpListener>, WorkerTaskResult> {
+async fn setup_listener(addr: Ipv4Addr, logger: &ChanneledLogger, port: &mut u16, max_clients: &mut usize, old_listener: Option<&mut TcpListener>) -> Result<Option<TcpListener>, WorkerTaskResult> {
     let old_port = *port;
     (*port, *max_clients) = match CONFIG.access().access() {
         Some(v) => (v.hosts_port, v.max_hosts as usize),
         None => {
-            log_error!("(Clients) Unable to retrive configuration. Exiting task.");
+            log_error!(logger, "Unable to retrive configuration. Exiting task.");
             return Err(WorkerTaskResult::Configuration);
         }
     };
 
-    log_debug!("(Client) Setting up listener: Old Port: {old_port}, New Port: {}", *port);
+    log_debug!(logger, "Setting up listener: Old Port: {old_port}, New Port: {}", *port);
     if old_port != *port {
-        log_info!("(Client) Listener being reset, opening on port {}", *port);
+        log_info!(logger, "Listener being reset, opening on port {}", *port);
         let addr = SocketAddr::from((addr, *port));
 
         let new_listener = match TcpListener::bind(addr).await {
             Ok(v) => v,
             Err(e) => {
-                log_error!("(Clients) Unable to open TCP listener '{e}', exiting task.");
+                log_error!(logger, "Unable to open TCP listener '{e}', exiting task.");
                 return Err(WorkerTaskResult::Sockets);
             }
         };
@@ -62,34 +47,34 @@ async fn setup_listener(addr: Ipv4Addr, port: &mut u16, max_clients: &mut usize,
         }
     }
     else {
-        log_info!("(Client) Request was made to reset listener, but port did not change. Ignoring update.");
+        log_info!(logger, "Request was made to reset listener, but port did not change. Ignoring update.");
         Ok(None)
     }
 }
 
-pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
-    log_info!("(Client) Starting listener...");
+pub async fn client_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
+    log_info!(&logger, "Starting listener...");
 
     let mut port: u16 = 0;
     let mut max_clients: usize = 0;
     let addr = Ipv4Addr::new(0, 0, 0, 0);
-    let mut listener: TcpListener = match setup_listener(addr, &mut port, &mut max_clients, None).await {
+    let mut listener: TcpListener = match setup_listener(addr, &logger, &mut port, &mut max_clients, None).await {
         Ok(v) => v.expect("It didnt give me the listener, when I expected it!"),
         Err(e) => return e
     };
 
-    log_debug!("(Client) Listener started.");
+    log_debug!(&logger, "Listener started.");
 
     let mut result_status: WorkerTaskResult = WorkerTaskResult::Ok;
 
-    let mut active: Vec<ArgSimplexTask<WorkerComm, (), TcpStream>> = vec![];
+    let mut active: Vec<TaskOnce<(), ()>> = vec![];
     loop {
         select! {
             conn = listener.accept() => {
                 let conn = match conn {
                     Ok(v) => v,
                     Err(e) => {
-                        log_error!("(Clients) Unable to accept from listener '{e}', exiting task.");
+                        log_error!(&logger, "Unable to accept from listener '{e}', exiting task.");
                         result_status = WorkerTaskResult::Sockets;
                         break;
                     }
@@ -97,125 +82,105 @@ pub async fn client_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
 
                 if active.len() >= max_clients {
                     //Send message stating that the network is busy.
-                    log_info!("(Clients) Closing connection to '{}' because the max hosts has been reached.", &conn.1);
+                    log_info!(&logger, "Closing connection to '{}' because the max hosts has been reached.", &conn.1);
 
                     continue;
                 }
 
-                log_info!("(Clients) started connection from '{}'", &conn.1);
+                log_info!(&logger, "Started connection from '{}'", &conn.1);
+                let prefix = Prefix::new(format!("Client Worker {}", active.len()), ConsoleColor::Red);
+                let their_logger = logger.make_channel(prefix);
                 active.push(
-                    ArgSimplexTask::start(client_worker, 10, conn.0)
+                    TaskOnce::new(async move |comm| {
+                        client_worker(their_logger, comm, conn.0).await 
+                    }, 10, true)
                 );
             },
             m = recv.recv() => {
-                let m = match m {
-                    Some(v) => v,
-                    None => {
-                        log_error!("(Clients) Unable to receive message from Orch, exiting task.");
-                        result_status = WorkerTaskResult::Failure;
-                        break;
-                    }
-                };
-
                 match m {
-                    SimpleComm::Poll => {
+                    TaskMessage::Poll => {
                         let mut result: bool = true;
                         let old_size = active.len();
 
                         let mut new_active = Vec::with_capacity(old_size);
                         let mut was_dead: usize = 0;
 
-                        log_info!("(Client) Poll started...");
-                        for (i, mut task) in active.into_iter().enumerate() {
-                            if !task.is_running() {
-                                log_debug!("(Client) Poll of task {i} determined it was dead.");
+                        log_info!(&logger, "Poll started...");
+                        for (i, task) in active.into_iter().enumerate() {
+                            if !task.poll().await {
+                                log_debug!(&logger, "Poll of task {i} failed.");
                                 was_dead += 1;
-                                continue;
-                            }
-
-                            let current = poll(&mut task).await;
-
-                            if !current {
-                                log_debug!("(Client) Poll of task {i} failed.");
                                 result = false;
                                 continue;
                             }
 
-                            log_debug!("(Client) Poll of task {i} passed.");
+                            log_debug!(&logger, "Poll of task {i} passed.");
                             new_active.push(task);
                         }
 
                         active = new_active;
-                        log_info!("(Client) Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
+                        log_info!(&logger, "Poll completed, pass? '{}' (dead: {was_dead}, failed: {})", result, old_size - active.len() - was_dead);
                     }
-                    SimpleComm::ReloadConfiguration => {
-                        if let Err(e) = setup_listener(addr, &mut port, &mut max_clients, Some(&mut listener)).await {
-                            log_error!("(Client) Unable to reload configuration due to error '{e}'");
+                    TaskMessage::Kill => {
+                        log_info!(&logger, "Got shutdown message from Orch.");
+                        break;
+                    }
+                    TaskMessage::Inner(SimpleComm::ReloadConfiguration) => {
+                        if let Err(e) = setup_listener(addr, &logger, &mut port, &mut max_clients, Some(&mut listener)).await {
+                            log_error!(&logger, "Unable to reload configuration due to error '{e}'");
                             result_status = e;
                             break;
                         }
 
-                        log_info!("(Clients) Configuration reloaded.");
+                        log_info!(&logger, "Configuration reloaded.");
                     }
-                    SimpleComm::Kill => {
-                        log_info!("(Client) Got shutdown message from Orch.");
-                        break;
-                    }
+                   
                 }
             }
         }
     }
 
-    log_debug!("(Client) Closing down tasks.");
+    log_info!(&logger, "Closing down tasks.");
 
-    let result = shutdown_tasks(active).await;
+    let mut result = Vec::with_capacity(active.len());
+    for task in active {
+        result.push(task.shutdown(true, &logger).await);
+    }
     let total = result.len();
     let ok = result.into_iter()
         .map(|x| {
             match x {
-                Ok(v) => v.is_some(),
-                Err(e) => !e.is_panic()
+                Ok(_) => true,
+                Err(e) => !e.is_fatality()
             }
         })
         .fold(0usize, |acc, x| if x { acc + 1 } else { acc } );
 
-    log_info!("(Client) {ok}/{total} tasks joined with non-panic errors.");
-    log_info!("(Client) Exiting task, result '{}'", &result_status);
+    log_info!(&logger, "{ok}/{total} tasks joined with non-panic errors.");
+    log_info!(&logger, "Exiting task, result '{}'", &result_status);
 
     result_status
 }
 
-pub async fn client_worker(mut conn: Receiver<WorkerComm>, mut stream: TcpStream) {
+pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut stream: TcpStream) {
     loop {
         select! {
-            v = conn.recv() => {
+            v = comm.recv() => {
                 match v {
-                    Some(v) => match v {
-                        WorkerComm::Poll => {
-                            log_debug!("(Client worker) Poll requested.");
-                            continue;
-                        }
-                        WorkerComm::Kill => {
-                            log_debug!("(Client worker) Got kill message.");
-                            break;
-                        }
-                    }
-                    None => {
-                        log_warning!("(Client worker) Unable to receive message from client thread. Exiting");
-                        return;
-                    }
+                    TaskMessage::Kill => return,
+                    TaskMessage::Poll | TaskMessage::Inner(_) => continue,
                 }
             },
             raw_msg = decode_request_async(&mut stream) => {
                 let msg: RequestMessages = match raw_msg {
                     Ok(v) => v,
                     Err(e) => {
-                        log_error!("(Client worker) Unable to decode message from bound client '{e}'. Exiting.");
+                        log_error!(&logger, "Unable to decode message from bound client '{e}'. Exiting.");
                         return;
                     }
                 };
     
-                log_debug!("(Client worker) Serving request '{:?}'", &msg);
+                log_info!(&logger, "Serving request '{:?}'", &msg);
     
                 let response: ResponseMessages = match msg {
                     RequestMessages::Ack(_) => Acknoledgement::new(HttpCode::Ok, Some("go off king".to_string())).into(),
@@ -226,7 +191,7 @@ pub async fn client_worker(mut conn: Receiver<WorkerComm>, mut stream: TcpStream
                             c
                         }
                         else {
-                            log_warning!("(Client worker) Unable to retrieve metrics. Resetting metrics.");
+                            log_warning!(&logger, "Unable to retrieve metrics. Resetting metrics.");
                             METRICS.reset();
                             vec![]
                         };
@@ -239,9 +204,9 @@ pub async fn client_worker(mut conn: Receiver<WorkerComm>, mut stream: TcpStream
                     }
                 };
     
-                log_debug!("(Client worker) Sending message...");
+                log_debug!(&logger, "Sending response message...");
                 if let Err(e) = send_response_async(response, &mut stream).await {
-                    log_error!("(Client worker) Unable to send message to client '{e}'.");
+                    log_error!(&logger, "Unable to send message to client '{e}'.");
                     return;
                 }
             }

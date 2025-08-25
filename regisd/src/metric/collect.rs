@@ -11,7 +11,6 @@
 
 use tokio::process::Command;
 
-use exdisj::log_warning;
 pub use common::metric::*;
 
 pub async fn collect_memory() -> Option<MemorySnapshot> {
@@ -93,10 +92,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
 
     let output = match raw_output {
         Ok(v) => v,
-        Err(e) => {
-            log_warning!("Unable to collect storage metrics '{e}'");
-            return None;
-        }
+        Err(_) => return None
     };
 
     if !output.status.success() {
@@ -178,10 +174,7 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
 
     let output = match raw_output {
         Ok(v) => v,
-        Err(e) => {
-            log_warning!("(Metrics) Unable to collect CPU '{e}'");
-            return None;   
-        }
+        Err(_) => return None
     };
 
     if !output.status.success() {
@@ -336,10 +329,7 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
 
     let output = match raw_output {
             Ok(v) => v,
-            Err(e) => {
-                log_warning!("(Collection) Unable to get process count, error '{e}'");
-                return None
-            }
+            Err(_) => return None
         };
 
     if !output.status.success() {

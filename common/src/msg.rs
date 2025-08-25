@@ -97,3 +97,10 @@ pub enum ConsoleRequests {
 }
 impl MessageBasis for ConsoleRequests { }
 impl RequestMessage for ConsoleRequests { }
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum ConsoleResponses {
+    Ok
+}
+impl MessageBasis for ConsoleResponses { }
+impl ResponseMessage for ConsoleResponses { }

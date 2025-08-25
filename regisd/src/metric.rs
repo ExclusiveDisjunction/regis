@@ -5,61 +5,55 @@ pub mod storage;
 use collect::collect_all_snapshots;
 use io::METRICS;
 
-use exdisj::{log_info, log_warning, log_error};
+use exdisj::{log_info, log_debug, log_warning};
 use exdisj::io::lock::OptionRwProvider;
+use exdisj::io::log::ChanneledLogger;
+use exdisj::task::{ChildComm, TaskMessage};
 use tokio::select;
-use tokio::sync::mpsc::Receiver;
 use tokio::time::interval;
 
 use std::time::Duration;
 
 use crate::{config::CONFIG, msg::{SimpleComm, WorkerTaskResult}};
 
-pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
+pub async fn metrics_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
     let mut freq = match CONFIG.access().access() {
         Some(v) => v.metric_freq,
         None => return WorkerTaskResult::Configuration
     };
 
-    log_info!("(Metrics) Started recording with frequency {freq} seconds.");
+    log_info!(&logger, "Started recording with frequency {freq} seconds.");
 
     let mut intv = interval(Duration::from_secs(freq));
 
     loop {
         select! {
             v = recv.recv() => {
-                let v = match v {
-                    Some(v) => v,
-                    None => {
-                        log_error!("(Metrics) Unable to get message from Orch.");
-                        return WorkerTaskResult::Failure;
-                    }
-                };
-
                 match v {
-                    SimpleComm::Poll => continue,
-                    SimpleComm::Kill => {
-                        log_info!("(Metrics) Got kill message from Orch.");
+                    TaskMessage::Poll => continue,
+                    TaskMessage::Kill => {
+                        log_info!(&logger, "Got kill message from Orch.");
                         break;
                     }
-                    SimpleComm::ReloadConfiguration => {
+                    TaskMessage::Inner(SimpleComm::ReloadConfiguration) => {
                         freq = match CONFIG.access().access() {
                             Some(v) => v.metric_freq,
                             None => {
-                                log_warning!("(Metrics) Unable to reload from configuration. Aboriting.");
+                                log_warning!(&logger, "Unable to reload from configuration. Aboriting.");
                                 return WorkerTaskResult::Configuration;
                             }
                         };
                         intv = interval(Duration::from_secs(freq));
-                        log_info!("(Metrics) Configuration reloaded");
+                        log_info!(&logger, "Configuration reloaded");
                         continue;
                     }
                 }
             },
             _ = intv.tick() => {
+                log_debug!(&logger, "Collecting metrics.");
                 let metrics = collect_all_snapshots().await;
                 if !METRICS.push(metrics) {
-                    log_warning!("(Metrics) Unable to insert into metrics. Resetting provider...");
+                    log_warning!(&logger, "Unable to insert into metrics. Resetting provider...");
                     METRICS.reset();
                 }
 
@@ -68,6 +62,6 @@ pub async fn metrics_entry(mut recv: Receiver<SimpleComm>) -> WorkerTaskResult {
         }
     }
 
-    log_info!("(Metrics) Exiting task, result 'Ok'");
+    log_info!(&logger, "Exiting task, result 'Ok'");
     WorkerTaskResult::Ok
 }
