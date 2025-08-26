@@ -14,10 +14,8 @@ use std::process::ExitCode;
 
 pub const REGISC_VERSION: Version = Version::new(0, 2, 0);
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(ValueEnum, Debug, Clone, Copy)]
 enum QuickCommand {
-    /// Instruct the daemon to approve authentication requests
-    Auth,
     /// Instruct the daemon to gracefully shutdown
     Shutdown,
     /// Instruct the daemon to reload its configuration file
@@ -74,6 +72,14 @@ pub async fn entry() -> Result<(), ExitCode> {
             return Err( ExitCode::FAILURE );
         }
     };
+
+    if let Some(q) = command.quick {
+        log_info!(&logger, "Sending quick command {q:?}");
+
+        
+
+        return Ok( () ); 
+    }
 
     log_info!(&logger, "Starting runtime");
     let runtime_channel = logger.make_channel(Prefix::new_const("Runtime", ConsoleColor::Green));
