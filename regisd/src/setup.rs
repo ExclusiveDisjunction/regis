@@ -95,7 +95,7 @@ pub fn start_logger(options: &Options) -> std::io::Result<Logger> {
     }
 
     let today = chrono::Local::now();
-    let logger_path = format!("{}{:?}-run.log", DAEMON_LOG_DIR, today);
+    let logger_path = format!("{DAEMON_LOG_DIR}{today:?}-run.log");
 
     Logger::new(logger_path, level, redirect)
 }

@@ -1,6 +1,12 @@
 #[cfg(unix)]
 pub mod work;
 
+#[cfg(feature="gui")]
+pub mod gui;
+
+pub mod core;
+pub mod cli;
+
 #[tokio::main]
 async fn main() {
     if cfg!(target_os="windows") {

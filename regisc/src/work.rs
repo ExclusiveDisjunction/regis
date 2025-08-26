@@ -1,30 +1,21 @@
-use common::log::{LOG, LoggerLevel, LoggerRedirect};
-use common::version::Version;
-use common::{log_critical, log_info};
-use common::msg::send_request_async;
-use regisd_com::msg::ConsoleRequests;
+use exdisj::io::log::{ConsoleColor, Logger, LoggerLevel, LoggerRedirect, Prefix};
+use exdisj::version::Version;
+use exdisj::{log_critical, log_info};
+use exdisj::io::msg::send_request_async;
 
-use regisd_com::loc::{COMM_PATH, CONSOLE_LOG_DIR};
+use common::loc::{CONSOLE_LOG_DIR, COMM_PATH};
+use common::msg::{ConsoleRequests, ConsoleResponses};
 
 use tokio::net::UnixStream;
 use tokio::fs::create_dir_all;
-use clap::{Parser, Subcommand};
+use clap::{Parser, ValueEnum};
 
-use std::process::exit;
+use std::process::ExitCode;
 
-pub const REGISC_VERSION: Version = Version::new(0, 1, 0);
+pub const REGISC_VERSION: Version = Version::new(0, 2, 0);
 
-#[derive(Parser, Debug)]
-#[command(name = "regisc", version = "0.1.0", about = "An interface to communicate with the regisd process, if it is running.")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-    #[arg(short, long)]
-    verbose: bool
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
+#[derive(ValueEnum, Debug, Clone)]
+enum QuickCommand {
     /// Instruct the daemon to approve authentication requests
     Auth,
     /// Instruct the daemon to gracefully shutdown
@@ -35,9 +26,26 @@ enum Commands {
     Poll,
 }
 
-pub async fn entry() {
+#[derive(Parser, Debug)]
+#[command(name = "regisc", version = "0.2.0", about = "An interface to communicate with the regisd process, if it is running.")]
+struct Options {
+    /// Connects to regisd, sends the specified message, and closes the connection. Cannot be combined with --gui.
+    #[arg(short, long)]
+    quick: Option<QuickCommand>,
+
+    /// When used, regisc will output more log messages. The default is false, and the default level will be warning.
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// When used, regisc will open as a graphical user interface. Cannot be combined with --quick.
+    #[cfg(feature="gui")]
+    #[arg(long)]
+    gui: bool
+}
+
+pub async fn entry() -> Result<(), ExitCode> {
     // Parse command
-    let command = Cli::parse();
+    let command = Options::parse();
 
     // Establish logger
     let level: LoggerLevel;
@@ -53,17 +61,25 @@ pub async fn entry() {
 
     if let Err(e) = create_dir_all(CONSOLE_LOG_DIR).await {
         eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
-        exit(1);
+        return Err( ExitCode::FAILURE );
     }
 
     let today = chrono::Local::now();
     let logger_path = format!("{}{:?}-run.log", CONSOLE_LOG_DIR, today);
 
-    if LOG.open(logger_path, level, redirect).is_err() {
-        eprintln!("Error! Unable to start log. Exiting.");
-        exit(1);     
-    }
+    let logger = match Logger::new(logger_path, level, redirect)  {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error! Unable to start log (error: '{e}'). Exiting.");
+            return Err( ExitCode::FAILURE );
+        }
+    };
 
+    log_info!(&logger, "Starting runtime");
+    let runtime_channel = logger.make_channel(Prefix::new_const("Runtime", ConsoleColor::Green));
+    let end_channel = logger.make_channel(Prefix::new_const("User", ConsoleColor::Cyan));
+
+    /*
     // Parse request
     let request = match command.command {
         Commands::Auth => ConsoleRequests::Auth,
@@ -106,4 +122,7 @@ pub async fn entry() {
 
         log_info!("Regisc complete. Message sent.");
     }
+     */
+
+    Ok( () )
 }

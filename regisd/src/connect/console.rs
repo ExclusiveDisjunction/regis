@@ -1,17 +1,25 @@
-use tokio::{
-    select,
-    net::{UnixStream, UnixListener},
-    sync::mpsc::{Receiver, Sender, channel},
-    fs::{create_dir_all, try_exists, remove_file}
-};
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use exdisj::io::{log::{ChanneledLogger, ConsoleColor, Prefix}, msg::send_response_async};
-use exdisj::{io::msg::{decode_request_async, send_message_async}, log_debug, log_error, log_info};
-use exdisj::task::{ChildComm, TaskMessage, TaskOnce};
-use common::{msg::{ConsoleResponses, ConsoleRequests}, loc::{TOTAL_DIR, COMM_PATH}};
+use tokio::{
+    select,
+    net::{UnixStream, UnixListener},
+    sync::mpsc::{Sender, channel},
+    fs::{create_dir_all, try_exists, remove_file}
+};
+
+use exdisj::{
+    log_debug, log_error, log_info,
+    io::{
+        log::{ChanneledLogger, ConsoleColor, Prefix},
+        msg::{send_response_async, decode_request_async}
+    },
+    task::{ChildComm, TaskMessage, TaskOnce}
+};
+use common::{
+    msg::{ConsoleResponses, ConsoleRequests}, 
+    loc::{TOTAL_DIR, COMM_PATH}
+};
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
 
@@ -109,10 +117,11 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
                         let mut was_dead: usize = 0;
 
                         log_info!(&logger, "Poll started...");
-                        for (i, mut task) in active.into_iter().enumerate() {
+                        for (i, task) in active.into_iter().enumerate() {
                             if !task.poll().await {
                                 log_debug!(&logger, "Poll of task {i} determined it was dead.");
                                 was_dead += 1;
+                                result = false;
                                 continue;
                             }
 
@@ -141,7 +150,6 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
                     }
                 };
 
-                let their_sender = send.clone();
                 log_info!(&logger, "Accepted connection from '{:?}'", &conn.1);
 
                 let prefix = Prefix::new(format!("Console Worker {}", active.len()), ConsoleColor::Yellow);

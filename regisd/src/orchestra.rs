@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use tokio::{
     select,
     signal::unix::{signal, Signal, SignalKind},
-    task::JoinError,
     time::{interval, Duration},
 };
 
@@ -28,7 +25,7 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_error, log_info, log_warning, task::{RestartError, Task}
+    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_error, log_info, log_warning, task::{RestartError, ShutdownError, Task}
 };
 
 /// The amount of time between each task "poll".
@@ -48,9 +45,9 @@ struct SignalBundle {
 }
 
 pub struct Orchestrator {
-    client: Task<SimpleComm, WorkerTaskResult>,
-    metric: Task<SimpleComm, WorkerTaskResult>,
-    console: Task<ConsoleComm, WorkerTaskResult>,
+    client: Task<ChanneledLogger, SimpleComm, WorkerTaskResult>,
+    metric: Task<ChanneledLogger, SimpleComm, WorkerTaskResult>,
+    console: Task<ChanneledLogger, ConsoleComm, WorkerTaskResult>,
 
     options: Options,
     log: ChanneledLogger
@@ -58,26 +55,27 @@ pub struct Orchestrator {
 impl Orchestrator {
     pub fn initialize(log: &Logger, options: setup::Options) -> Self {
         let my_log = log.make_channel(ORCH_PREFIX.clone());
-        let log_arc = Arc::new(my_log);
 
-        let mut client = Task::new(async |comm|{
-            let logger = log_arc.make_channel(CLNT_PREFIX.clone());
-            client_entry(logger, comm).await
-        }, TASKS_DEFAULT_BUFFER, true);
+        let mut client = Task::new(
+            client_entry, 
+            TASKS_DEFAULT_BUFFER, 
+            true,
+            log.make_channel(CLNT_PREFIX.clone())
+        );
 
-        let mut console = Task::new(async |comm| {
-            let logger = my_log.make_channel(CONS_PREFIX.clone());
-            console_entry(logger, comm).await
-        }, TASKS_DEFAULT_BUFFER, false);
+        let mut console = Task::new(
+            console_entry, 
+            TASKS_DEFAULT_BUFFER, 
+            false,
+            log.make_channel(CONS_PREFIX.clone())
+        );
 
-        let mut metric = Task::new(async |comm| {
-            let logger = my_log.make_channel(METR_PREFIX.clone());
-            metrics_entry(logger, comm).await
-        }, TASKS_DEFAULT_BUFFER, true);
-
-        client.with_logger(&my_log);
-        console.with_logger(&my_log);
-        metric.with_logger(&my_log);
+        let mut metric = Task::new(
+            metrics_entry,
+            TASKS_DEFAULT_BUFFER, 
+            true,
+            log.make_channel(METR_PREFIX.clone())
+        );
 
         client.with_restarts(5);
         console.with_restarts(5);
@@ -248,7 +246,7 @@ impl Orchestrator {
         }
     }
 
-    fn get_shutdown_msg(x: Result<WorkerTaskResult, JoinError>) -> String {
+    fn get_shutdown_msg(x: Result<WorkerTaskResult, ShutdownError>) -> String {
         match x {
             Ok(v) => v.to_string(),
             Err(e) => format!("join error: '{e}'"),
@@ -257,9 +255,9 @@ impl Orchestrator {
 
     pub async fn shutdown(self) {
         let shutdowns = [
-            Self::get_shutdown_msg(self.client.join().await),
-            Self::get_shutdown_msg(self.console.join().await),
-            Self::get_shutdown_msg(self.metric.join().await)
+            Self::get_shutdown_msg(self.client.shutdown(true).await),
+            Self::get_shutdown_msg(self.console.shutdown(true).await),
+            Self::get_shutdown_msg(self.metric.shutdown(true).await)
         ];
 
         log_info!(
