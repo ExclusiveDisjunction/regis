@@ -1,12 +1,9 @@
-use std::os::unix::process;
-use std::sync::mpsc::Sender;
-
-use exdisj::task::{ParentComm, ShutdownError, TaskMessage};
-use exdisj::{log_debug, log_info, log_error, log_warning};
-use exdisj::{io::log::ChanneledLogger, task::{ChildComm, TaskOnce}};
-use exdisj::io::msg::{send_request_async, decode_request_async};
-use tokio::net::UnixStream;
-use tokio::task::JoinError;
+use common::msg::{ConsoleRequests, ConsoleResponses};
+use exdisj::{
+    log_debug, log_info, log_error, log_warning,
+    io::log::ChanneledLogger,
+    task::{ChildComm, TaskOnce, TaskMessage, ShutdownError}
+};
 
 use crate::core::conn::{Connection, ConnectionError};
 
@@ -61,8 +58,23 @@ pub enum BackendOutput {
     CommFailure
 }
 
-pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, stream: &mut Connection) -> Result<(), ConnectionError> {
-    todo!()
+pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, stream: &mut Connection) -> Result<BackendResponses, ConnectionError> {
+    let request: ConsoleRequests = match msg {
+        BackendRequests::Poll => ConsoleRequests::Poll,
+        BackendRequests::Shutdown => ConsoleRequests::Shutdown,
+        BackendRequests::ReloadConfig => ConsoleRequests::Config,
+        BackendRequests::DetermineAuth => todo!(),
+        BackendRequests::GetConfig => todo!(),
+        BackendRequests::UpdateConfig => todo!(),
+    };
+    log_debug!(logger, "Sending request {:?} to regisd", &request);
+    let response: ConsoleResponses = stream.send_with_response(request).await?;
+
+    Ok( 
+        match response {
+            ConsoleResponses::Ok => BackendResponses::Ok
+        }
+    )
 }
 
 pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendMessage>, mut stream: Connection) -> BackendOutput {
@@ -80,11 +92,20 @@ pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendM
             TaskMessage::Inner(msg) => {
                 if let Some(req) = msg.as_request() {
                     log_info!(&logger, "Processing request {:?}", &req);
-                    if let Err(e) = process_request(req, &logger, &mut stream).await {
-                        log_error!(&logger, "Unable to process request with error: '{e:?}'. Backend exiting.");
+                    match process_request(req, &logger, &mut stream).await {
+                        Ok(resp) => {
+                            if !comm.force_send(resp.into()).await {
+                                log_error!(&logger, "Unable to send response back to the backend controller. Backend exiting.");
+                                result = BackendOutput::CommFailure;
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            log_error!(&logger, "Unable to process request with error: '{e:?}'. Backend exiting.");
 
-                        result = BackendOutput::InvalidStream;
-                        break;
+                            result = BackendOutput::InvalidStream;
+                            break;
+                        }
                     }
                 }
                 else {

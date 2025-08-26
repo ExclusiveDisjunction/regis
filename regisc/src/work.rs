@@ -1,20 +1,14 @@
 use exdisj::io::log::{ConsoleColor, Logger, LoggerLevel, LoggerRedirect, Prefix};
-use exdisj::version::Version;
-use exdisj::{log_critical, log_info};
-use exdisj::io::msg::send_request_async;
+use exdisj::log_info;
 
-use common::loc::{CONSOLE_LOG_DIR, COMM_PATH};
-use common::msg::{ConsoleRequests, ConsoleResponses};
+use common::loc::CONSOLE_LOG_DIR;
 
-use tokio::net::UnixStream;
 use clap::{Parser, ValueEnum};
 
 use std::process::ExitCode;
 use std::fs::create_dir_all;
 
 use crate::cli::cli_entry;
-
-
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
 enum QuickCommand {
