@@ -7,12 +7,14 @@ use common::loc::{CONSOLE_LOG_DIR, COMM_PATH};
 use common::msg::{ConsoleRequests, ConsoleResponses};
 
 use tokio::net::UnixStream;
-use tokio::fs::create_dir_all;
 use clap::{Parser, ValueEnum};
 
 use std::process::ExitCode;
+use std::fs::create_dir_all;
 
-pub const REGISC_VERSION: Version = Version::new(0, 2, 0);
+use crate::cli::cli_entry;
+
+
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
 enum QuickCommand {
@@ -41,7 +43,7 @@ struct Options {
     gui: bool
 }
 
-pub async fn entry() -> Result<(), ExitCode> {
+pub fn entry() -> Result<(), ExitCode> {
     // Parse command
     let command = Options::parse();
 
@@ -57,7 +59,7 @@ pub async fn entry() -> Result<(), ExitCode> {
         redirect = LoggerRedirect::default();
     }
 
-    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR).await {
+    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR) {
         eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
         return Err( ExitCode::FAILURE );
     }
@@ -85,50 +87,18 @@ pub async fn entry() -> Result<(), ExitCode> {
     let runtime_channel = logger.make_channel(Prefix::new_const("Runtime", ConsoleColor::Green));
     let end_channel = logger.make_channel(Prefix::new_const("User", ConsoleColor::Cyan));
 
-    /*
-    // Parse request
-    let request = match command.command {
-        Commands::Auth => ConsoleRequests::Auth,
-        Commands::Config => ConsoleRequests::Config,
-        Commands::Shutdown => ConsoleRequests::Shutdown,
-        Commands::Poll => ConsoleRequests::Poll,
-    };
-
-    //Connect
-    log_info!("Connecting to regisd...");
-    let mut stream = match UnixStream::connect(COMM_PATH).await {
-        Ok(v) => v,
-        Err(e) => {
-            if request == ConsoleRequests::Poll {
-                log_critical!("Daemon is not active, due to failure to connect to it.");
-            }
-            else {
-                log_critical!("Unable to connect to regisd: '{}'. Please ensure that it is loaded & running.", e);
-            }
-            exit(3);
-        }
-    };
-
-    // Send message
-    let result = send_request_async(request, &mut stream).await;
-    
-    if let Err(e) = result {
-        if request == ConsoleRequests::Poll {
-            log_critical!("Daemon is not active, due to failure to send a message to it.");
-        }
-        else {
-            log_critical!("Unable to send message, reason '{e}'.");
-        }
-        exit(1);
+    if let Some(quick) = command.quick {
+        panic!("Quick commands are not complete yet. Cannot complete {quick:?} request.");
     }
-    else {
-        if request == ConsoleRequests::Poll {
-            println!("The daemon is active.")
-        }
 
-        log_info!("Regisc complete. Message sent.");
+    #[cfg(feature="gui")]
+    if command.gui {
+        panic!("the gui section of the program is not ready yet.");
     }
-     */
 
+    // Now we do the CLI entry.
+    cli_entry(end_channel, runtime_channel)?;
+
+    log_info!(&logger, "Regisc complete.");
     Ok( () )
 }

@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 #[cfg(unix)]
 pub mod work;
 
@@ -7,8 +9,7 @@ pub mod gui;
 pub mod core;
 pub mod cli;
 
-#[tokio::main]
-async fn main() {
+fn main() -> Result<(), ExitCode> {
     if cfg!(target_os="windows") {
         println!("Unfortunatley, this software is not offered on windows software. Please compile and run for linux, macOS, or BSD.");
         std::process::exit(1);
@@ -17,5 +18,5 @@ async fn main() {
     // Since this requires named pipes, this can only run on unix. That macro ensures that.
 
     #[cfg(unix)]
-    work::entry().await;
+    work::entry()
 }

@@ -71,7 +71,7 @@ impl Connection {
         self.recv().await.map_err(ConnectionError::from)
     }
 
-    pub async fn send_and_expect(&mut self, message: ConsoleRequests, expect: ConsoleResponses) -> Result<(), ConnectionError> {
+    pub async fn send_and_expect(&mut self, message: ConsoleRequests) -> Result<(), ConnectionError> {
         send_request_async(message, &mut self.stream).await.map_err(ConnectionError::from)?;
 
         match decode_response_async(&mut self.stream).await {
@@ -89,12 +89,12 @@ impl Connection {
     
 
     pub async fn poll(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Poll, ConsoleResponses::Ok).await
+        self.send_and_expect(ConsoleRequests::Poll).await
     }
     pub async fn kill(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Shutdown, ConsoleResponses::Ok).await
+        self.send_and_expect(ConsoleRequests::Shutdown).await
     }
     pub async fn config(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Config, ConsoleResponses::Ok).await
+        self.send_and_expect(ConsoleRequests::Config).await
     }
 }
