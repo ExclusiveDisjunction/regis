@@ -8,7 +8,7 @@ name = "regisd"
 path = "src/main.rs"
 
 [dependencies]
-exdisj = { path="../../exdisj-rs", features=["async", "json", "auth"] }
+exdisj = { path="../../exdisj-rs", features=["async", "json"] }
 common = { path="../common" }
 
 serde = {version = "1.0.218", features = ["derive"]}
@@ -19,8 +19,10 @@ chrono = { version = "0.4.40", features=["serde"] }
 clap = { version = "4.5.32", features = ["derive"] }
 daemonize = "0.5.0"
 aes-gcm = "0.10.3"
-rand = "0.9.1"
 rsa_ext = { version = "0.1.2", features = ["serde"] }
 sha2 = "0.10.9"
-rand_core = "0.9.3"
 jwt = "0.16.0"
+base64 = "0.22.1"
+hmac = "0.12.1"
+rand_core = "*"
+rand = "*"
