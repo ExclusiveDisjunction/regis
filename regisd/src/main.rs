@@ -5,7 +5,7 @@ pub mod metric;
 pub mod orchestra;
 pub mod failure;
 pub mod setup;
-pub mod sess;
+pub mod auth;
 
 use exdisj::{log_critical, log_info, log_warning};
 use exdisj::io::lock::OptionRwProvider;
