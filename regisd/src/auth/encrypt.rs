@@ -1,14 +1,11 @@
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit},
-    Aes256Gcm, Nonce, Key as AesKey, Error as AesError
-};
+use aes_gcm::{aead::{Aead, AeadCore, KeyInit, Nonce}, Aes256Gcm, Error as AesError, Key as AesKey};
 use rsa_ext::{errors::Result as RsaResult, PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 use rand_core::{RngCore, CryptoRng};
 use serde::{Deserialize, Serialize};
 
 pub type AesResult<T> = Result<T, AesError>;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct RsaHandler {
     public: RsaPublicKey,
     private: RsaPrivateKey
@@ -63,7 +60,7 @@ impl AesHandler {
     }
 
     pub fn encrypt<R>(&self, msg: &[u8], rng: &mut R) -> AesResult<(Vec<u8>, Nonce<Aes256Gcm>)> where R: CryptoRng + RngCore {
-        let nonce: Nonce<_> = Aes256Gcm::generate_nonce(rng);
+        let nonce = Aes256Gcm::generate_nonce(rng);
         let cipher = Aes256Gcm::new(&self.0);
         
         let encrypted = cipher.encrypt(&nonce, msg)?;
@@ -72,5 +69,13 @@ impl AesHandler {
             encrypted,
             nonce
         ) )
+    }
+    pub fn decrypt<R>(&self, msg: &[u8], nonce: &Nonce<Aes256Gcm>) -> AesResult<Vec<u8>> {
+        let cipher = Aes256Gcm::new(&self.0);
+        cipher.decrypt(&nonce, msg)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }

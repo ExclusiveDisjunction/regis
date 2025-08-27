@@ -79,14 +79,7 @@ impl UserManager {
     }
 
     pub async fn open() -> Result<Self, IOError> {
-        let mut file = match File::open(DAEMON_AUTH_USERS_PATH).await {
-            Ok(f) => f,
-            Err(_) => {
-               // We will just return a blank file...
-               return Ok( Self::new() )
-            }
-        };
-
+        let mut file = File::open(DAEMON_AUTH_USERS_PATH).await?;
         Self::open_from(&mut file).await
     }
     pub async fn open_from<S>(stream: &mut S) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
@@ -98,6 +91,9 @@ impl UserManager {
         as_json.curr_id = *as_json.users.keys().max().unwrap_or(&0);
 
         Ok( as_json )
+    }
+    pub async fn open_or_default() -> Self {
+        Self::open().await.ok().unwrap_or_else(UserManager::default)
     }
 
     pub async fn save(&self) -> Result<(), std::io::Error> {

@@ -57,33 +57,42 @@ impl From<base64::DecodeSliceError> for JwtDecodeError {
     }
 }
 
+#[derive(Debug)]
 pub struct SessionsManager {
-    key: Hmac<Sha256>
+    key: Hmac<Sha256>,
+    buffer: AuthKey
 }
 impl SessionsManager {
-    pub async fn try_open() -> Result<Self, IOError> {
+    pub async fn open() -> Result<Self, IOError> {
         let mut buffer: AuthKey = [0; 32];
         let mut file = File::open(DAEMON_AUTH_KEY_PATH).await?;
         file.read_exact(&mut buffer).await?;
 
         Ok(
             Self {
-                key: Hmac::new_from_slice(&buffer).expect("the keysize is invalid...")
+                key: Hmac::new_from_slice(&buffer).expect("the keysize is invalid..."),
+                buffer
             }
         )
     }
-    pub async fn generate_key<R>(rng: &mut R) -> Result<Self, IOError> where R: RngCore {
+    pub fn new<R>(rng: &mut R) -> Self where R: RngCore {
         let mut buffer: AuthKey = [0; 32];
         rng.fill_bytes(&mut buffer);
 
-        let mut file = File::create(DAEMON_AUTH_KEY_PATH).await?;
-        file.write_all(&buffer).await?;
+        Self {
+            key: Hmac::new_from_slice(&buffer).expect("key size is invalid..."),
+            buffer
+        }
+    }
+    pub async fn open_or_default<R>(rng: &mut R) -> Self where R: RngCore {
+        Self::open().await.ok().unwrap_or_else(|| {
+            Self::new(rng)
+        })
+    }
 
-        Ok(
-            Self {
-                key: Hmac::new_from_slice(&buffer).expect("key size is invalid...")
-            }
-        )
+    pub async fn save(&self) -> Result<(), IOError> {
+        let mut file = File::create(DAEMON_AUTH_KEY_PATH).await?;
+        file.write_all(&self.buffer).await
     }
 
     pub fn make_jwt<V>(&self, content: V) -> Result<String, jwt::Error> where V: Into<JwtRawContent> {
@@ -122,7 +131,7 @@ async fn test_sess_man() {
         user.get_jwt_content().to_content()
     };
 
-    let sess = SessionsManager::generate_key(&mut rng).await.expect("unable to create a session manager");
+    let sess = SessionsManager::new(&mut rng);
     let jwt = sess.make_jwt(to_store.clone()).expect("Unable to create the JWT");
 
     let decoded = sess.decode_jwt(&jwt).expect("unable to decode the jwt");
