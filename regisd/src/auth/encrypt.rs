@@ -1,5 +1,6 @@
 use std::ops::Deref;
 use std::io::{Read, Write};
+use std::pin::Pin;
 use std::string::FromUtf8Error;
 use serde::de::DeserializeOwned;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -286,12 +287,18 @@ impl<S, R> std::io::Seek for RsaStream<S, R>
         }
 }
 impl<S, R> tokio::io::AsyncSeek for RsaStream<S, R> 
-    where S: tokio::io::AsyncSeek {
-        fn start_seek(self: std::pin::Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
-            todo!()
+    where S: tokio::io::AsyncSeek + Unpin,
+    R: Unpin,
+    Self: Unpin {
+        fn start_seek(mut self: std::pin::Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
+            let me: &mut RsaStream<S, R> = &mut *self;
+            let pinned_inner = Pin::new(&mut me.inner);
+            pinned_inner.start_seek(position)
         }
-        fn poll_complete(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<u64>> {
-            todo!()
+        fn poll_complete(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<u64>> {
+            let me: &mut RsaStream<S, R> = &mut *self;
+            let pinned_inner = Pin::new(&mut me.inner);
+            pinned_inner.poll_complete(cx)
         }
     }
 
@@ -320,5 +327,65 @@ mod tests {
         let decoded = stream.receive_bytes().expect("Unable to get bytes back");
 
         assert_eq!(&decoded, &bytes)
+    }
+
+    #[test]
+    fn metrics_rsa_stream() {
+        use std::io::Cursor;
+        use chrono::{DateTime, Utc, Duration};
+        use rand::thread_rng;
+
+        let inner_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+        let mut rng = thread_rng();
+
+        let key = RsaHandler::new(&mut rng).expect("unable to make a key");
+        let mut stream = RsaStream::new(inner_stream, key);
+
+        //We define a set of variable size arrays to test encoding and decoding.
+        let mut results: [(Duration, Duration); 6] = [(Duration::zero(), Duration::zero()); 6];
+        let mut input: [Vec<u8>; 6] = [
+            vec![0; 128],
+            vec![0; 256],
+            vec![0; 512],
+            vec![0; 1024],
+            vec![0; 2048],
+            vec![0; 4096]
+        ]; 
+        
+        for array in &mut input {
+            rng.fill_bytes(array)
+        }
+
+        for (i, data) in input.iter().enumerate() {
+            // Reset the stream
+            stream.get_stream_mut().set_position(0);
+            stream.get_stream_mut().get_mut().clear();
+
+            let start = Utc::now();
+            stream.send_bytes(&data, &mut rng)
+                .expect("Unable to send message.");
+
+            let midpoint = Utc::now();
+            let send_diff = midpoint - start;
+
+            //Move to the front
+            stream.get_stream_mut().set_position(0);
+
+            let start = Utc::now();
+            let result = stream.receive_bytes()
+                .expect("Unable to recv message");
+            let end = Utc::now();
+            let recv_diff = end - start;
+
+            assert_eq!(&result, data);
+            results[i] = (send_diff, recv_diff);
+        }
+
+        println!("| {:^10} | {:^10} | {:^10} | {:^10} |", "Dataset", "Size (B)", "Send", "Receive");
+        println!("| {:-^10} | {:-^10} | {:-^10} | {:-^10} |", "", "", "", "");
+
+        for (i, (input_size, (send, recv))) in std::iter::zip(input.map(|x| x.len()), results).enumerate() {
+            println!("| {:^10} | {:^10} | {:>10} | {:>10} |", i, input_size, send, recv);
+        }
     }
 }
