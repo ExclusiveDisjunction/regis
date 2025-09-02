@@ -1,8 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
+use exdisj::auth::{AesHandler, AesStream, RsaEncrypt, RsaEncrypter};
 use exdisj::io::log::{Prefix, ChanneledLogger, ConsoleColor};
-use exdisj::io::msg::{decode_request_async, send_response_async, Acknoledgement, HttpCode};
+use exdisj::io::msg::{Acknoledgement, HttpCode};
+use exdisj::io::net::send_buffer_async;
+use rsa_ext::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 
@@ -10,6 +13,7 @@ use exdisj::task::{ChildComm, TaskMessage, TaskOnce};
 use exdisj::{log_debug, log_error, log_info, log_warning};
 use exdisj::io::lock::OptionRwProvider;
 
+use crate::auth::man::AUTH;
 use crate::config::CONFIG;
 use crate::metric::collect::collect_all_snapshots;
 use crate::metric::io::METRICS;
@@ -163,6 +167,62 @@ pub async fn client_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleCom
 }
 
 pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut stream: TcpStream) {
+    let auth = AUTH.get().unwrap();
+    let rng = &mut *auth.get_rng().await;
+
+    // Send the RSA public key.
+    let pub_key = auth.get_rsa().public_key();
+    log_debug!(&logger, "Serializing the RSA public key for the client");
+    let pub_key_as_bytes = match serde_json::to_vec(pub_key) {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(&logger, "Unable to serialize the RSA public key, error '{e:?}'");
+            return;
+        }
+    };
+
+    log_debug!(&logger, "Sending the public key to the client.");
+    if let Err(e) = send_buffer_async(&pub_key_as_bytes, &mut stream).await {
+        log_error!(&logger, "Unable to send the public RSA key '{e:?}'");
+        return;
+    }
+
+    log_debug!(&logger, "Send complete, switching to RSA encrypted stream.");
+    let mut rsa_stream = auth.make_rsa_stream(stream);
+
+    log_debug!(&logger, "Obtaining the client's public key.");
+    let client_rsa: RsaPublicKey = match rsa_stream.receive_deserialize_async().await {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(&logger, "Unable to deserialize the client's public RSA key, error: '{e:?}'.");
+            return;
+        }
+    };
+    let client_rsa = RsaEncrypter::new_direct(client_rsa);
+    log_debug!(&logger, "Got client RSA key, generating an AES key");
+
+    let aes_key = AesHandler::new(rng);
+    log_debug!(&logger, "Encrypting the AES key using client RSA key.");
+    match client_rsa.encrypt(aes_key.as_bytes(), rng) {
+        Ok(v) => {
+            log_info!(&logger, "Sending the client the AES key.");
+            if let Err(e) = rsa_stream.send_bytes_async(&v, rng).await {
+                log_error!(&logger, "Unable to send the AES key to the client, error '{e:?}'.");
+                return;
+            }
+        },
+        Err(e) => {
+            log_error!(&logger, "Unable to encrypt the AES key for the client, error: '{e:?}'.");
+            return;
+        }
+    }
+
+    // Now we can use AES encryption streams
+    log_debug!(&logger, "Switching to AES encrypted stream");
+    let mut aes_stream = AesStream::new(rsa_stream.take().0, aes_key);
+
+    // TODO: Handle authentication later
+
     loop {
         select! {
             v = comm.recv() => {
@@ -171,7 +231,7 @@ pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut
                     TaskMessage::Poll | TaskMessage::Inner(_) => continue,
                 }
             },
-            raw_msg = decode_request_async(&mut stream) => {
+            raw_msg = aes_stream.receive_deserialize_async() => {
                 let msg: RequestMessages = match raw_msg {
                     Ok(v) => v,
                     Err(e) => {
@@ -205,7 +265,7 @@ pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut
                 };
     
                 log_debug!(&logger, "Sending response message...");
-                if let Err(e) = send_response_async(response, &mut stream).await {
+                if let Err(e) = aes_stream.send_serialize_async(&response, rng).await {
                     log_error!(&logger, "Unable to send message to client '{e}'.");
                     return;
                 }

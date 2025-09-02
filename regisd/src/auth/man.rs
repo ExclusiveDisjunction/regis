@@ -1,4 +1,5 @@
 use std::{fmt::Display, net::IpAddr};
+use std::sync::{Arc, RwLock};
 
 use exdisj::{
     log_error, log_info,
@@ -12,6 +13,7 @@ use once_cell::sync::OnceCell;
 use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{Mutex, MutexGuard};
 use common::{
     jwt::JwtContent,
     user::{UserHistoryElement, CompleteUserInformationMut}
@@ -42,8 +44,6 @@ impl ClientUserInformation {
         &self.jwt
     }
 }
-
-use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 #[derive(Debug)]
 pub enum RenewalError {
@@ -152,20 +152,12 @@ impl AuthManager {
     pub fn make_rsa_stream<S>(&self, stream: S) -> RsaStream<S, &RsaHandler> {
         RsaStream::new(stream, &self.rsa)
     }
-    pub fn get_rng(&self) -> MutexGuard<'_, StdRng> {
-        match self.rng.lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                let mut guard = e.into_inner();
-                *guard = StdRng::from_rng(&mut rand::thread_rng()).expect("Unable to create a new stdrng");
-
-                guard
-            }
-        }
+    pub async fn get_rng(&self) -> MutexGuard<'_, StdRng> {
+        self.rng.lock().await 
     }
 
     pub async fn initialize(&self) {
-        let rng = &mut *self.get_rng();
+        let rng = &mut *self.get_rng().await;
         let core = AuthManagerState::open_or_default(rng, self.logger.clone()).await;
         let mut guard = match self.state.write() {
             Ok(g) => g,
@@ -175,6 +167,7 @@ impl AuthManager {
         *guard = Some(core)
     }
 
+    #[allow(clippy::await_holding_lock)]
     pub async fn save(&self) -> Result<(), std::io::Error> {
         let guard = self.state.read()
             .expect("the inner state for authentication was corrupted");
@@ -191,12 +184,13 @@ impl AuthManager {
         }
     }
 
-    pub fn create_user(&self, nickname: String) -> Result<ClientUserInformation, jwt::Error> {
+    #[allow(clippy::await_holding_lock)]
+    pub async fn create_user(&self, nickname: String) -> Result<ClientUserInformation, jwt::Error> {
         let mut guard = self.state.write()
             .expect("the inner state for authentication was corrupted");
 
         let state = (*guard).as_mut().expect("the authentication system is not initialized");
-        state.create_user(&mut *self.get_rng(), nickname)
+        state.create_user(&mut *self.get_rng().await, nickname)
     }
     pub fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
         let guard = self.state.read()
