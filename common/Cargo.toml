@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-chrono = "0.4.40"
-serde = {version = "1.0.218", features = ["derive"]}
-exdisj = { path="../../exdisj-rs" }
+chrono = { version = "0.4.40", features=["serde"] }
+serde = { version = "1.0.218", features = ["derive"] }
+exdisj = { path="../../exdisj-rs", features = ["json"] }
+base64 = "0.22.1"

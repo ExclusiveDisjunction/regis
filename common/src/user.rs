@@ -64,7 +64,8 @@ impl UserInformation {
         self.history.push(new);
     }
 
-    pub(super) fn complete<'a>(&'a self, id: u64) -> CompleteUserInformation<'a> {
+    #[deprecated(note = "this function is not intended for direct use. Use UserManager from Regisd instead.")]
+    pub fn complete<'a>(&'a self, id: u64) -> CompleteUserInformation<'a> {
         CompleteUserInformation {
             id,
             auth_key: &self.auth_key,
@@ -72,7 +73,8 @@ impl UserInformation {
             history: &self.history
         }
     }
-    pub(super) fn complete_mut<'a>(&'a mut self, id: u64) -> CompleteUserInformationMut<'a> {
+    #[deprecated(note = "this function is not intended for direct use. Use UserManager from Regisd instead.")]
+    pub fn complete_mut<'a>(&'a mut self, id: u64) -> CompleteUserInformationMut<'a> {
         CompleteUserInformationMut {
             id,
             auth_key: &self.auth_key,

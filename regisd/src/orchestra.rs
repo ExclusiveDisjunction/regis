@@ -60,6 +60,7 @@ impl Orchestrator {
         let auth_log = log.make_channel(AUTH_PREFIX.clone());
 
         let auth = AuthManager::new(auth_log).await;
+        auth.initialize().await;
         AUTH.set(auth).expect("Duplicated authentication manager!");
 
         let mut client = Task::new(

@@ -1,16 +1,24 @@
 use std::{fmt::Display, net::IpAddr};
 
-use exdisj::{io::log::{ChanneledLogger, LoggerBase}, log_error, log_info};
+use exdisj::{
+    log_error, log_info,
+    io::log::{ChanneledLogger, LoggerBase},
+    auth::{
+        encrypt::RsaHandler,
+        stream::RsaStream
+    }
+};
 use once_cell::sync::OnceCell;
 use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
-
-use crate::auth::{encrypt::RsaHandler, stream::RsaStream, user::{CompleteUserInformationMut, UserHistoryElement}};
+use common::{
+    jwt::JwtContent,
+    user::{UserHistoryElement, CompleteUserInformationMut}
+};
 
 use super::{
     sess::{JwtDecodeError, SessionsManager},
-    jwt::JwtContent, 
     user_man::UserManager
 };
 

@@ -5,12 +5,14 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Serialize, Deserialize, de::{self, Visitor, SeqAccess, MapAccess}};
 use rand_core::RngCore;
-use exdisj::{log_info, log_error, io::log::LoggerBase};
-
-use crate::auth::jwt::JwtBase;
-use crate::auth::user::CompleteUserInformationMut;
-
-use super::user::{UserInformation, CompleteUserInformation};
+use exdisj::{
+    log_info, log_error, 
+    io::log::LoggerBase
+};
+use common::{
+    jwt::JwtBase,
+    user::{CompleteUserInformationMut, UserInformation, CompleteUserInformation}
+};
 
 use common::loc::DAEMON_AUTH_USERS_PATH;
 
@@ -22,6 +24,7 @@ impl<'a> Iterator for UserManagerIter<'a> {
         let inner = self.0.next()?;
 
         Some(
+            #[allow(deprecated)]
             inner.1.complete(*inner.0)
         )
     }
@@ -35,6 +38,7 @@ impl<'a> Iterator for UserManagerIterMut<'a> {
         let inner = self.0.next()?;
 
         Some(
+            #[allow(deprecated)]
             inner.1.complete_mut(*inner.0)
         )
     }
@@ -233,6 +237,7 @@ impl<L> UserManager<L> where L: LoggerBase {
         self.users.insert(new_id, new_user);
 
         let target = self.users.get_mut(&new_id).expect("inserted user with id {new_id}, but was not able to get it back out");
+        #[allow(deprecated)]
         target.complete_mut(new_id)
     }
     pub fn revoke(&mut self, user: u64) {
@@ -245,10 +250,12 @@ impl<L> UserManager<L> where L: LoggerBase {
 
     pub fn get_user(&self, id: u64) -> Option<CompleteUserInformation<'_>> {
         let target = self.users.get(&id)?;
+        #[allow(deprecated)]
         Some( target.complete(id) )
     }
     pub fn get_user_mut(&mut self, id: u64) -> Option<CompleteUserInformationMut<'_>> {
         let target = self.users.get_mut(&id)?;
+        #[allow(deprecated)]
         Some( target.complete_mut(id) )
     }
     
@@ -277,6 +284,7 @@ impl<L> UserManager<L> where L: LoggerBase {
                 None
             }
             else {
+                #[allow(deprecated)]
                 Some( info.complete(jwt.id()) )
             }
     }
@@ -292,6 +300,7 @@ impl<L> UserManager<L> where L: LoggerBase {
                 None
             }
             else {
+                #[allow(deprecated)]
                 Some( info.complete_mut(jwt.id()) )
             }
     }
@@ -313,7 +322,7 @@ impl<L> UserManager<L> where L: LoggerBase {
 #[tokio::test]
 async fn test_user_man() {
     use tokio::io::AsyncSeekExt;
-    use super::jwt::JwtContent;
+    use common::jwt::JwtContent;
 
     let mut user_man = UserManager::default();
     let mut rng = rand::thread_rng();

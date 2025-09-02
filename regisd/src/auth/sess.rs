@@ -3,8 +3,10 @@ use std::fmt::Display;
 use std::io::Error as IOError;
 use std::collections::BTreeMap;
 
-use exdisj::io::log::LoggerBase;
-use exdisj::{log_debug, log_error, log_info};
+use exdisj::{
+    log_debug, log_error, log_info,
+    io::log::LoggerBase
+};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use hmac::{Hmac, Mac as _};
@@ -12,11 +14,11 @@ use sha2::Sha256;
 use rand_core::RngCore;
 use jwt::{SignWithKey as _, VerifyWithKey as _};
 
-use common::loc::DAEMON_AUTH_KEY_PATH;
-
-use crate::auth::jwt::{JwtContent, JwtRawContent};
-
-use super::user::AuthKey;
+use common::{
+    loc::DAEMON_AUTH_KEY_PATH,
+    jwt::{JwtContent, JwtRawContent},
+    user::AuthKey
+};
 
 #[derive(Debug)]
 pub enum JwtDecodeError {
