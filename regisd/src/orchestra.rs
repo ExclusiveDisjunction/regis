@@ -20,7 +20,8 @@ use crate::{
     setup::{
         self, 
         Options
-    }
+    },
+    auth::man::{AUTH, AuthManager}
 };
 use common::loc::DAEMON_CONFIG_PATH;
 
@@ -37,6 +38,7 @@ pub const ORCH_PREFIX: Prefix = Prefix::new_const("Orch", ConsoleColor::Blue);
 pub const CONS_PREFIX: Prefix = Prefix::new_const("Console", ConsoleColor::Cyan);
 pub const CLNT_PREFIX: Prefix = Prefix::new_const("Client", ConsoleColor::Magenta);
 pub const METR_PREFIX: Prefix = Prefix::new_const("Metric", ConsoleColor::Green);
+pub const AUTH_PREFIX: Prefix = Prefix::new_const("Auth", ConsoleColor::Red);
 
 struct SignalBundle {
     term: Signal,
@@ -53,8 +55,12 @@ pub struct Orchestrator {
     log: ChanneledLogger
 }
 impl Orchestrator {
-    pub fn initialize(log: &Logger, options: setup::Options) -> Self {
+    pub async fn initialize(log: &Logger, options: setup::Options) -> Self {
         let my_log = log.make_channel(ORCH_PREFIX.clone());
+        let auth_log = log.make_channel(AUTH_PREFIX.clone());
+
+        let auth = AuthManager::new(auth_log).await;
+        AUTH.set(auth).expect("Duplicated authentication manager!");
 
         let mut client = Task::new(
             client_entry, 
@@ -276,5 +282,11 @@ impl Orchestrator {
             shutdowns[2]
         );
         log_info!(&self.log, "Tasks shut down.");
+
+        log_info!(&self.log, "Saving global states.");
+        let auth_result = AUTH.get().unwrap().save().await.is_ok();
+        let config_result = CONFIG.save(DAEMON_CONFIG_PATH).is_ok();
+
+        log_info!(&self.log, "Global state save complete. Results: Auth => {}, Config => {}", auth_result, config_result)
     }
 }

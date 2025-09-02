@@ -146,7 +146,7 @@ impl AesPacket<Vec<u8>> {
             Err(InvalidNonceLengthError)
         }
         else {
-            Ok( EncryptedAesMessage::new(self.cipher, Nonce::from_exact_iter(self.nonce.into_iter()).unwrap() ) )
+            Ok( EncryptedAesMessage::new(self.cipher, Nonce::from_exact_iter(self.nonce).unwrap() ) )
         }
     }
 

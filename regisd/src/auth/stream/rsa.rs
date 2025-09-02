@@ -158,7 +158,7 @@ impl<S, R> RsaStream<S, R>
         pub fn send_bytes_deref<G, T>(&mut self, buff: &T, rng: &mut G) -> Result<(), RsaSendError>
             where G: RngCore + CryptoRng,
             T: Deref<Target = [u8]> + ?Sized {
-                self.send_bytes(&*buff, rng)
+                self.send_bytes(buff, rng)
             }
         pub fn send_string<G>(&mut self, string: &str, rng: &mut G) -> Result<(), RsaSendError> 
             where G: RngCore + CryptoRng {
@@ -189,7 +189,7 @@ impl<S, R> RsaStream<S, R>
         pub async fn send_bytes_deref_async<G, T>(&mut self, buff: &T, rng: &mut G) -> Result<(), RsaSendError>
             where G: RngCore + CryptoRng,
             T: Deref<Target = [u8]> + ?Sized {
-                self.send_bytes_async(&*buff, rng).await
+                self.send_bytes_async(buff, rng).await
             }
         pub async fn send_string_async<G>(&mut self, string: &str, rng: &mut G) -> Result<(), RsaSendError> 
             where G: RngCore + CryptoRng {
@@ -217,12 +217,12 @@ impl<S, R> AsyncSeek for RsaStream<S, R>
     R: Unpin,
     Self: Unpin {
         fn start_seek(mut self: std::pin::Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
-            let me: &mut RsaStream<S, R> = &mut *self;
+            let me: &mut RsaStream<S, R> = &mut self;
             let pinned_inner = Pin::new(&mut me.inner);
             pinned_inner.start_seek(position)
         }
         fn poll_complete(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<u64>> {
-            let me: &mut RsaStream<S, R> = &mut *self;
+            let me: &mut RsaStream<S, R> = &mut self;
             let pinned_inner = Pin::new(&mut me.inner);
             pinned_inner.poll_complete(cx)
         }
@@ -230,15 +230,14 @@ impl<S, R> AsyncSeek for RsaStream<S, R>
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Seek, SeekFrom};
+    use std::io::{Seek, SeekFrom, Cursor};
+    use rand::thread_rng;
 
     use super::*;
     use crate::auth::encrypt::rsa::RsaHandler;
 
     #[test]
     fn test_rsa_stream() {
-        use std::io::Cursor;
-        use rand::thread_rng;
 
         let inner_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
         let mut rng = thread_rng();
@@ -246,6 +245,23 @@ mod tests {
         let key = RsaHandler::new(&mut rng).expect("unable to make a key");
         let mut stream = RsaStream::new(inner_stream, key);
 
+        let bytes = [100, 150, 200, 10];
+        stream.send_bytes(&bytes, &mut rng).expect("Unable to send a message");
+        stream.seek(SeekFrom::Start(0)).expect("unable to seek");
+
+        let decoded = stream.receive_bytes().expect("Unable to get bytes back");
+
+        assert_eq!(&decoded, &bytes)
+    }
+
+    #[test]
+    fn test_rsa_stream_ref() {
+        let inner_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+        let mut rng = thread_rng();
+
+        let key = RsaHandler::new(&mut rng).expect("unable to make a key");
+
+        let mut stream = RsaStream::new(inner_stream, &key);
         let bytes = [100, 150, 200, 10];
         stream.send_bytes(&bytes, &mut rng).expect("Unable to send a message");
         stream.seek(SeekFrom::Start(0)).expect("unable to seek");

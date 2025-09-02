@@ -3,6 +3,8 @@ use std::fmt::Display;
 use std::io::Error as IOError;
 use std::collections::BTreeMap;
 
+use exdisj::io::log::LoggerBase;
+use exdisj::{log_debug, log_error, log_info};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use hmac::{Hmac, Mac as _};
@@ -58,41 +60,68 @@ impl From<base64::DecodeSliceError> for JwtDecodeError {
 }
 
 #[derive(Debug)]
-pub struct SessionsManager {
+pub struct SessionsManager<L: LoggerBase> {
     key: Hmac<Sha256>,
-    buffer: AuthKey
+    buffer: AuthKey,
+    logger: L
 }
-impl SessionsManager {
-    pub async fn open() -> Result<Self, IOError> {
+impl<L> SessionsManager<L> where L: LoggerBase {
+    pub async fn open(logger: L) -> Result<Self, IOError> {
         let mut buffer: AuthKey = [0; 32];
-        let mut file = File::open(DAEMON_AUTH_KEY_PATH).await?;
-        file.read_exact(&mut buffer).await?;
+        let mut file = match File::open(DAEMON_AUTH_KEY_PATH).await {
+            Ok(f) => f,
+            Err(e) => {
+                log_error!(&logger, "Unable to open the authentication key.");
+                return Err(e)
+            }
+        };
+        if let Err(e) = file.read_exact(&mut buffer).await {
+            log_error!(&logger, "Unable to read key contents, exactly 32 bytes.");
+            return Err(e)
+        }
 
         Ok(
             Self {
                 key: Hmac::new_from_slice(&buffer).expect("the keysize is invalid..."),
-                buffer
+                buffer,
+                logger
             }
         )
     }
-    pub fn new<R>(rng: &mut R) -> Self where R: RngCore {
+    pub fn new<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
         let mut buffer: AuthKey = [0; 32];
         rng.fill_bytes(&mut buffer);
+        log_info!(&logger, "Generating a new JWT session key.");
 
         Self {
             key: Hmac::new_from_slice(&buffer).expect("key size is invalid..."),
-            buffer
+            buffer,
+            logger
         }
     }
-    pub async fn open_or_default<R>(rng: &mut R) -> Self where R: RngCore {
-        Self::open().await.ok().unwrap_or_else(|| {
-            Self::new(rng)
+    pub async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
+        Self::open(logger.clone()).await.ok().unwrap_or_else(|| {
+            Self::new(rng, logger)
         })
     }
 
     pub async fn save(&self) -> Result<(), IOError> {
-        let mut file = File::create(DAEMON_AUTH_KEY_PATH).await?;
-        file.write_all(&self.buffer).await
+        log_debug!(&self.logger, "Opening a file to save the JWT path at {DAEMON_AUTH_KEY_PATH}");
+        let mut file = match File::create(DAEMON_AUTH_KEY_PATH).await {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!(&self.logger, "Unable to create a file to save the JWT key.");
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = file.write_all(&self.buffer).await {
+            log_error!(&self.logger, "Unable to save the JWT key to the file.");
+            Err(e)
+        }
+        else {
+            Ok( () )
+        }
     }
 
     pub fn make_jwt<V>(&self, content: V) -> Result<String, jwt::Error> where V: Into<JwtRawContent> {
@@ -123,7 +152,7 @@ impl SessionsManager {
 async fn test_sess_man() {
     use super::user_man::UserManager;
 
-    let mut users = UserManager::new();
+    let mut users = UserManager::default();
     let mut rng = rand::thread_rng();
 
     let to_store: JwtContent = {
@@ -131,7 +160,7 @@ async fn test_sess_man() {
         user.get_jwt_content().to_content()
     };
 
-    let sess = SessionsManager::new(&mut rng);
+    let sess = SessionsManager::new(&mut rng, ());
     let jwt = sess.make_jwt(to_store.clone()).expect("Unable to create the JWT");
 
     let decoded = sess.decode_jwt(&jwt).expect("unable to decode the jwt");

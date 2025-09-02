@@ -3,8 +3,9 @@ use std::io::{Error as IOError, ErrorKind};
 
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, de::{self, Visitor, SeqAccess, MapAccess}};
 use rand_core::RngCore;
+use exdisj::{log_info, log_error, io::log::LoggerBase};
 
 use crate::auth::jwt::JwtBase;
 use crate::auth::user::CompleteUserInformationMut;
@@ -56,44 +57,155 @@ impl<'a> Iterator for UserManagerRevokedIter<'a> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(field_identifier, rename_all = "lowercase")]
+enum UserManagerFields {
+    Users,
+    Revoked
+}
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct UserManager {
+struct UserManagerVisitor;
+impl<'de> Visitor<'de> for UserManagerVisitor {
+    type Value = UserManager<()>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("struct UserManager<()>")
+    }
+    
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>, {
+        let users: HashMap<u64, UserInformation> = seq.next_element()?
+                .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+        let revoked = seq.next_element()?
+                .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+        let max_id = *users.keys().max().unwrap_or(&0);
+        Ok(
+            UserManager {
+                users,
+                revoked,
+                curr_id: max_id,
+                logger: ()
+            }
+        )
+    }
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>, {
+        let mut users: Option<HashMap<u64, UserInformation>> = None;
+        let mut revoked = None;
+
+        while let Some(key) = map.next_key()? {
+            match key {
+                UserManagerFields::Users => {
+                    if users.is_some() {
+                        return Err(de::Error::duplicate_field("users"));
+                    }
+
+                    users = Some( map.next_value()? )
+                }
+                UserManagerFields::Revoked => {
+                    if revoked.is_some() {
+                        return Err(de::Error::duplicate_field("revoked"));
+                    }
+
+                    revoked = Some( map.next_value()? )
+                }
+            }
+        }
+
+        let users = users
+                .ok_or_else(|| de::Error::missing_field("users"))?;
+        let revoked = revoked
+                .ok_or_else(|| de::Error::missing_field("revoked"))?;
+
+        let max_id = *users.keys().max().unwrap_or(&0);
+        Ok(
+            UserManager {
+                users,
+                revoked,
+                curr_id: max_id,
+                logger: ()
+            }
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct UserManager<L> where L: LoggerBase {
     users: HashMap<u64, UserInformation>,
     revoked: HashSet<u64>,
     #[serde(skip)]
-    curr_id: u64
+    curr_id: u64,
+    #[serde(skip)]
+    logger: L
 }
-impl Default for UserManager {
-    fn default() -> Self {
-        Self::new()
+impl<'de> Deserialize<'de> for UserManager<()> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: de::Deserializer<'de> {
+        const FIELDS: &[&str] = &["users", "revoked"];
+
+        deserializer.deserialize_struct("UserManager", FIELDS, UserManagerVisitor)
     }
 }
-impl UserManager {
-    pub fn new() -> Self {
-        Self {
+impl Default for UserManager<()> {
+    fn default() -> Self {
+         Self {
             users: HashMap::new(),
             revoked: HashSet::new(),
-            curr_id: 0
+            curr_id: 0,
+            logger: ()
         }
     }
-
-    pub async fn open() -> Result<Self, IOError> {
-        let mut file = File::open(DAEMON_AUTH_USERS_PATH).await?;
-        Self::open_from(&mut file).await
+}
+impl<L> UserManager<L> where L: LoggerBase {
+    pub fn change_logger<L2>(self, new: L2) -> UserManager<L2> where L2: LoggerBase {
+        UserManager {
+            users: self.users,
+            revoked: self.revoked,
+            curr_id: self.curr_id,
+            logger: new
+        }
     }
-    pub async fn open_from<S>(stream: &mut S) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
-        let mut contents = String::new();
-        stream.read_to_string(&mut contents).await?;
+    
+    pub async fn open(logger: L) -> Result<Self, IOError> {
+        let mut file = match File::open(DAEMON_AUTH_USERS_PATH).await {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!(&logger, "Unable to open the user manager file '{:?}'", &e);
+                return Err(e)
+            }
+        };
 
-        let mut as_json: Self = serde_json::from_str(&contents).map_err(|x| IOError::new(ErrorKind::InvalidData, x))?;
-
-        as_json.curr_id = *as_json.users.keys().max().unwrap_or(&0);
-
-        Ok( as_json )
+        Self::open_from(&mut file, logger).await
     }
-    pub async fn open_or_default() -> Self {
-        Self::open().await.ok().unwrap_or_else(UserManager::default)
+    pub async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
+        let mut bytes: Vec<u8> = vec![];
+        if let Err(e) = stream.read_to_end(&mut bytes).await {
+            log_error!(&logger, "Unable to read file contents from the stream '{:?}'", &e);
+            return Err(e);
+        }
+
+        let as_json: UserManager<()> = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!(&logger, "Unable to decode the binary data into a UserManager instance: '{:?}'", &e);
+                return Err( IOError::new(ErrorKind::InvalidData, e) );
+            }
+        };
+
+        Ok( as_json.change_logger(logger) )
+    }
+    pub async fn open_or_default(logger: L) -> Self {
+        match Self::open(logger.clone()).await.ok() {
+            Some(v) => v,
+            None => {
+                log_info!(&logger, "Opening as a default user manager.");
+                UserManager::default().change_logger(logger)
+            }
+        }
     }
 
     pub async fn save(&self) -> Result<(), std::io::Error> {
@@ -112,6 +224,7 @@ impl UserManager {
         where R: RngCore {
         let new_id = self.curr_id + 1;
         self.curr_id += 1;
+        log_info!(&self.logger, "Creating a new user with id '{new_id}' and nickname '{}'", &nickname);
 
         let mut key: [u8; 32] = [0; 32];
         rng.fill_bytes(&mut key);
@@ -123,6 +236,7 @@ impl UserManager {
         target.complete_mut(new_id)
     }
     pub fn revoke(&mut self, user: u64) {
+        log_info!(&self.logger, "Revoking user with id '{user}'");
         self.revoked.insert(user);
     } 
     pub fn is_revoked(&self, user: u64) -> bool {
@@ -142,7 +256,8 @@ impl UserManager {
         match self.users.get(&jwt.id()) {
             Some(info) => {
                 if self.is_revoked(jwt.id()) {
-                    return false
+                    log_info!(&self.logger, "A user with id '{}' does exist, but it is revoked.", jwt.id());
+                    return false;
                 }
 
                 info.auth_key() == jwt.key()
@@ -150,19 +265,35 @@ impl UserManager {
             None => false
         }
     }
-    pub fn verify_and_fetch_user<T>(&mut self, jwt: &T) -> Option<CompleteUserInformationMut<'_>> where T: JwtBase {
-        if self.is_revoked(jwt.id()) {
-            return None
-        }
+    pub fn verify_and_fetch_user<T>(&self, jwt: &T) -> Option<CompleteUserInformation<'_>> 
+        where T: JwtBase {
+            if self.is_revoked(jwt.id()) {
+                return None
+            }
 
-        let info = self.users.get_mut(&jwt.id())?;
+            let info = self.users.get(&jwt.id())?;
 
-        if info.auth_key() != jwt.key() { 
-            None
-        }
-        else {
-            Some( info.complete_mut(jwt.id()) )
-        }
+            if info.auth_key() != jwt.key() { 
+                None
+            }
+            else {
+                Some( info.complete(jwt.id()) )
+            }
+    }
+    pub fn verify_and_fetch_user_mut<T>(&mut self, jwt: &T) -> Option<CompleteUserInformationMut<'_>> 
+        where T: JwtBase {
+            if self.is_revoked(jwt.id()) {
+                return None
+            }
+
+            let info = self.users.get_mut(&jwt.id())?;
+
+            if info.auth_key() != jwt.key() { 
+                None
+            }
+            else {
+                Some( info.complete_mut(jwt.id()) )
+            }
     }
 
     pub fn iter<'a>(&'a self) -> UserManagerIter<'a> {
@@ -184,7 +315,7 @@ async fn test_user_man() {
     use tokio::io::AsyncSeekExt;
     use super::jwt::JwtContent;
 
-    let mut user_man = UserManager::new();
+    let mut user_man = UserManager::default();
     let mut rng = rand::thread_rng();
 
     let key_to_test: JwtContent = {
@@ -206,7 +337,7 @@ async fn test_user_man() {
 
     stream.rewind().await.expect("could not rewind");
 
-    let new_user_man = UserManager::open_from(&mut stream).await.expect("could not re-open");
+    let new_user_man = UserManager::open_from(&mut stream, ()).await.expect("could not re-open");
 
     assert_eq!(new_user_man, user_man);
 }

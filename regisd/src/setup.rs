@@ -56,7 +56,7 @@ pub struct Options {
 
 pub async fn start_orch(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
     log_info!(log, "Init complete, handling tasks to orchestrator");
-    let orch = Orchestrator::initialize(log, options);
+    let orch = Orchestrator::initialize(log, options).await;
 
     let result = orch.run().await;
     CONFIG.save(DAEMON_CONFIG_PATH).map_err(|_| DaemonFailure::IOError)?;

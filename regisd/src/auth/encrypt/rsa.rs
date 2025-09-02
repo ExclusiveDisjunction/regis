@@ -11,6 +11,20 @@ pub trait RsaDecrypt {
     fn decrypt(&self, msg: &[u8]) -> RsaResult<Vec<u8>>;
 }
 
+impl<T> RsaEncrypt for &T
+    where T: RsaEncrypt + ?Sized {
+        fn encrypt<R>(&self, msg: &[u8], rng: &mut R) -> RsaResult<Vec<u8>> 
+                where R: CryptoRng + RngCore {
+            (*self).encrypt(msg, rng)
+        }
+}
+impl<T> RsaDecrypt for &T
+    where T: RsaDecrypt + ?Sized {
+        fn decrypt(&self, msg: &[u8]) -> RsaResult<Vec<u8>> {
+            (*self).decrypt(msg)
+        }
+}
+
 #[derive(Clone, Debug)]
 pub struct RsaHandler {
     public: RsaPublicKey,

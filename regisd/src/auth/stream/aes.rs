@@ -190,12 +190,12 @@ impl<S> AsyncSeek for AesStream<S>
     where S: AsyncSeek + Unpin,
     Self: Unpin {
         fn start_seek(mut self: std::pin::Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
-            let me: &mut AesStream<S> = &mut *self;
+            let me: &mut AesStream<S> = &mut self;
             let pinned_inner = Pin::new(&mut me.inner);
             pinned_inner.start_seek(position)
         }
         fn poll_complete(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<u64>> {
-            let me: &mut AesStream<S> = &mut *self;
+            let me: &mut AesStream<S> = &mut self;
             let pinned_inner = Pin::new(&mut me.inner);
             pinned_inner.poll_complete(cx)
         }

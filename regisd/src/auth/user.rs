@@ -5,10 +5,25 @@ use chrono::{DateTime, Utc};
 
 pub type AuthKey = [u8; 32];
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UserHistoryElement {
     from_ip: IpAddr,
     at_time: DateTime<Utc>
+}
+impl UserHistoryElement {
+    pub fn new(from_ip: IpAddr, at_time: DateTime<Utc>) -> Self {
+        Self {
+            from_ip,
+            at_time
+        }
+    }
+    
+    pub fn from_ip(&self) -> IpAddr {
+        self.from_ip
+    }
+    pub fn at_time(&self) -> DateTime<Utc> {
+        self.at_time
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -88,13 +103,13 @@ impl<'a> CompleteUserInformation<'a> {
         self.id
     }
     pub fn auth_key(&self) -> &AuthKey {
-        &self.auth_key
+        self.auth_key
     }
     pub fn nickname(&self) -> &str {
-        &self.nickname
+        self.nickname
     }
     pub fn history(&self) -> &[UserHistoryElement] {
-        &self.history
+        self.history
     }
 }
 impl PartialEq<UserInformation> for CompleteUserInformation<'_> {
@@ -124,13 +139,13 @@ impl<'a> CompleteUserInformationMut<'a> {
         self.id
     }
     pub fn auth_key(&self) -> &AuthKey {
-        &self.auth_key
+        self.auth_key
     }
     pub fn nickname(&self) -> &str {
-        &self.nickname
+        self.nickname
     }
     pub fn history(&self) -> &[UserHistoryElement] {
-        &self.history
+        self.history
     }
 
     pub fn set_nickname(&mut self, new: String) {
