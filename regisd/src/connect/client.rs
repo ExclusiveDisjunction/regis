@@ -1,17 +1,20 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
-use exdisj::auth::{AesHandler, AesStream, RsaEncrypt, RsaEncrypter};
-use exdisj::io::log::{Prefix, ChanneledLogger, ConsoleColor};
-use exdisj::io::msg::{Acknoledgement, HttpCode};
-use exdisj::io::net::send_buffer_async;
+use exdisj::{
+    log_debug, log_error, log_info, log_warning,
+    io::{
+        log::{Prefix, ChanneledLogger, ConsoleColor},
+        msg::{Acknoledgement, HttpCode},
+        lock::OptionRwProvider,
+        net::{receive_buffer_async, send_buffer_async}
+    },
+    auth::{AesHandler, AesStream, RsaHandler, RsaStream},
+    task::{ChildComm, TaskMessage, TaskOnce}
+};
 use rsa_ext::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
-
-use exdisj::task::{ChildComm, TaskMessage, TaskOnce};
-use exdisj::{log_debug, log_error, log_info, log_warning};
-use exdisj::io::lock::OptionRwProvider;
 
 use crate::auth::man::AUTH;
 use crate::config::CONFIG;
@@ -171,9 +174,9 @@ pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut
     let rng = &mut *auth.get_rng().await;
 
     // Send the RSA public key.
-    let pub_key = auth.get_rsa().public_key();
+    let (pub_key, priv_key) = auth.get_rsa().clone().split();
     log_debug!(&logger, "Serializing the RSA public key for the client");
-    let pub_key_as_bytes = match serde_json::to_vec(pub_key) {
+    let pub_key_as_bytes = match serde_json::to_vec(pub_key.public_key()) {
         Ok(v) => v,
         Err(e) => {
             log_error!(&logger, "Unable to serialize the RSA public key, error '{e:?}'");
@@ -187,34 +190,31 @@ pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut
         return;
     }
 
-    log_debug!(&logger, "Send complete, switching to RSA encrypted stream.");
-    let mut rsa_stream = auth.make_rsa_stream(stream);
+    log_debug!(&logger, "Send complete, waiting for client RSA key.");
+    let mut client_rsa_bytes: Vec<u8> = vec![];
+    if let Err(e) = receive_buffer_async(&mut client_rsa_bytes, &mut stream).await {
+        log_error!(&logger, "Unable to receive the bytes for the client RSA key, error '{e:?}'.");
+        return;
+    }
 
-    log_debug!(&logger, "Obtaining the client's public key.");
-    let client_rsa: RsaPublicKey = match rsa_stream.receive_deserialize_async().await {
+    let client_rsa: RsaPublicKey = match serde_json::from_slice(&client_rsa_bytes) {
         Ok(v) => v,
         Err(e) => {
             log_error!(&logger, "Unable to deserialize the client's public RSA key, error: '{e:?}'.");
             return;
         }
     };
-    let client_rsa = RsaEncrypter::new_direct(client_rsa);
-    log_debug!(&logger, "Got client RSA key, generating an AES key");
+    log_debug!(&logger, "Got client RSA key, switching to RSA encrypted channel.");
+
+    let complete_rsa = RsaHandler::from_parts(client_rsa, priv_key.into_inner());
+    let mut rsa_stream = RsaStream::new(stream, complete_rsa);
+
+    log_debug!(&logger, "Generating an AES key and sending it to the client over RSA stream.");
 
     let aes_key = AesHandler::new(rng);
-    log_debug!(&logger, "Encrypting the AES key using client RSA key.");
-    match client_rsa.encrypt(aes_key.as_bytes(), rng) {
-        Ok(v) => {
-            log_info!(&logger, "Sending the client the AES key.");
-            if let Err(e) = rsa_stream.send_bytes_async(&v, rng).await {
-                log_error!(&logger, "Unable to send the AES key to the client, error '{e:?}'.");
-                return;
-            }
-        },
-        Err(e) => {
-            log_error!(&logger, "Unable to encrypt the AES key for the client, error: '{e:?}'.");
-            return;
-        }
+    if let Err(e) = rsa_stream.send_bytes_async(aes_key.as_bytes(), rng).await {
+        log_error!(&logger, "Unable to send the AES key over the RSA stream, error '{e:?}'");
+        return;
     }
 
     // Now we can use AES encryption streams
