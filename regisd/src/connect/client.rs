@@ -5,7 +5,6 @@ use exdisj::{
     log_debug, log_error, log_info, log_warning,
     io::{
         log::{Prefix, ChanneledLogger, ConsoleColor},
-        msg::{Acknoledgement, HttpCode},
         lock::OptionRwProvider,
         net::{receive_buffer_async, send_buffer_async}
     },
@@ -243,7 +242,6 @@ pub async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut
                 log_info!(&logger, "Serving request '{:?}'", &msg);
     
                 let response: ResponseMessages = match msg {
-                    RequestMessages::Ack(_) => Acknoledgement::new(HttpCode::Ok, Some("go off king".to_string())).into(),
                     RequestMessages::Metrics(amount) => {
                         let collected = METRICS.view(amount);
     

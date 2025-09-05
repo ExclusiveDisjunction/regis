@@ -12,16 +12,15 @@ use exdisj::{
     log_debug, log_error, log_info,
     io::{
         log::{ChanneledLogger, ConsoleColor, Prefix},
-        msg::{send_response_async, decode_request_async}
+        msg::{send_message_async, decode_message_async}
     },
     task::{ChildComm, TaskMessage, TaskOnce}
 };
 use common::{
-    msg::{ConsoleResponses, ConsoleRequests}, 
-    loc::{TOTAL_DIR, COMM_PATH}
+    loc::{COMM_PATH, TOTAL_DIR}, msg::{ConsoleAuthRequests, ConsoleAuthResponses, ConsoleRequests, ConsoleResponses, UserDetails, UserSummary}
 };
 
-use crate::msg::{ConsoleComm, WorkerTaskResult};
+use crate::{auth::man::AUTH, msg::{ConsoleComm, WorkerTaskResult}};
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
 async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, WorkerTaskResult> {
@@ -59,6 +58,8 @@ async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, Wo
 
 /// Represents the actual tasks carried out by connected consoles.
 pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleRequests>) {
+    let auth = AUTH.get().expect("Auth is not initalized");
+
     loop {
         select! {
             v = comm.recv() => { //Something from parent Console
@@ -67,7 +68,7 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                     TaskMessage::Kill => return
                 }
             }
-            raw_msg = decode_request_async(&mut source) => {
+            raw_msg = decode_message_async(&mut source) => {
                 let msg: ConsoleRequests = match raw_msg {
                     Ok(v) => v,
                     Err(e) => {
@@ -76,12 +77,59 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                     }
                 };
 
-                if let Err(e) = sender.send(msg).await {
-                    log_error!(&logger, "Unable to send message to console manager: '{e}'.");
-                    return;
+                log_debug!(&logger, "Processing request '{:?}' from console connection", &msg);
+
+                let (to_parent, resp) = match msg {
+                    ConsoleRequests::Poll => (Some(ConsoleRequests::Poll), ConsoleResponses::Ok),
+                    ConsoleRequests::Shutdown => (Some(ConsoleRequests::Shutdown), ConsoleResponses::Ok),
+                    ConsoleRequests::Config => (Some(ConsoleRequests::Config), ConsoleResponses::Ok),
+                    ConsoleRequests::Auth(v) => {
+                        let resp: ConsoleAuthResponses = match v {
+                            ConsoleAuthRequests::AllUsers => {
+                                let auth_provision = auth.get_provision();
+
+                                let result: Vec<UserSummary> = auth_provision.get_all_users()
+                                    .into_iter()
+                                    .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
+                                    .collect();
+
+                                ConsoleAuthResponses::AllUsers(result)
+                            },
+                            ConsoleAuthRequests::UserHistory(id) => {
+                                let auth_provision = auth.get_provision();
+                                match auth_provision.get_user_info(id) {
+                                    Some(user) => ConsoleAuthResponses::SpecificUser(
+                                        UserDetails::new(
+                                            user.id(), 
+                                            user.nickname().to_string(), 
+                                            user.history().to_vec()
+                                        )
+                                    ),
+                                    None => ConsoleAuthResponses::UserNotFound
+                                }
+                            },
+                            ConsoleAuthRequests::Pending => todo!(),
+                            ConsoleAuthRequests::Revoke(id) => {
+                                todo!("revoke the user with id {id}")
+                            }
+                            ConsoleAuthRequests::Approve(id) => {
+                                todo!("approve the authorization with id {id}")
+                            }
+                        };
+
+                        let resp = ConsoleResponses::Auth(resp);
+                        (None, resp)
+                    }
+                };
+
+                if let Some(msg) = to_parent {
+                    if let Err(e) = sender.send(msg).await {
+                        log_error!(&logger, "Unable to send message to console manager: '{e}'.");
+                        return;
+                    }
                 }
                 
-                if let Err(e) = send_response_async(ConsoleResponses::Ok, &mut source).await {
+                if let Err(e) = send_message_async(resp, &mut source).await {
                     log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
                     return;
                 }
@@ -167,7 +215,9 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
                         log_info!(&logger, "Got message '{:?}' from worker thread.", v);
                         let to_orch = match v {
                             ConsoleRequests::Shutdown => ConsoleComm::SystemShutdown,
-                            ConsoleRequests::Auth => continue,
+                            ConsoleRequests::Auth(auth) => {
+                                todo!("fill out {auth:?}...")
+                            },
                             ConsoleRequests::Poll => continue,
                             ConsoleRequests::Config => ConsoleComm::ReloadConfiguration
                         };

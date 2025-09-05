@@ -1,21 +1,17 @@
+use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
-use exdisj::io::{
-    msg::{MessageBasis, ResponseMessage, RequestMessage, Acknoledgement},
-    metric::PrettyPrinter
-};
+use exdisj::io::metric::PrettyPrinter;
 
-use crate::metric::CollectedMetrics;
+use crate::{metric::CollectedMetrics, user::UserHistoryElement};
 
-use std::fmt::{Display, Debug};
+use std::{fmt::{Debug, Display}, net::IpAddr, ops::Deref};
 
 /// General response about server status
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ServerStatusResponse {
     pub info: CollectedMetrics
 }
-impl MessageBasis for ServerStatusResponse {}
-impl ResponseMessage for ServerStatusResponse {} 
 impl Display for ServerStatusResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -42,33 +38,22 @@ impl Display for MetricsResponse {
         write!(f, "{joined}")
     }
 }
-impl MessageBasis for MetricsResponse {}
-impl ResponseMessage for MetricsResponse {}
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum RequestMessages {
     Status,
-    Metrics(usize),
-    Ack(Acknoledgement)
+    Metrics(usize)
 }
 impl From<usize> for RequestMessages {
     fn from(value: usize) -> Self {
         Self::Metrics(value)
     }
 }
-impl From<Acknoledgement> for RequestMessages {
-    fn from(value: Acknoledgement) -> Self {
-        Self::Ack(value)
-    }
-}
-impl MessageBasis for RequestMessages {}
-impl RequestMessage for RequestMessages { }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum ResponseMessages {
     Status(ServerStatusResponse),
-    Metrics(MetricsResponse),
-    Ack(Acknoledgement)
+    Metrics(MetricsResponse)
 }
 impl From<ServerStatusResponse> for ResponseMessages {
     fn from(value: ServerStatusResponse) -> Self {
@@ -80,27 +65,86 @@ impl From<MetricsResponse> for ResponseMessages {
         Self::Metrics(value)
     }
 }
-impl From<Acknoledgement> for ResponseMessages {
-    fn from(value: Acknoledgement) -> Self {
-        Self::Ack(value)
-    }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleAuthRequests {
+    Pending,
+    Revoke(u64),
+    Approve(u64),
+    AllUsers,
+    UserHistory(u64)
 }
-impl MessageBasis for ResponseMessages { }
-impl ResponseMessage for ResponseMessages { }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ConsoleRequests {
     Shutdown,
-    Auth,
+    Auth(ConsoleAuthRequests),
     Config,
     Poll
 }
-impl MessageBasis for ConsoleRequests { }
-impl RequestMessage for ConsoleRequests { }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum ConsoleResponses {
-    Ok
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct PendingUser {
+    id: u64,
+    ip: IpAddr,
+    time: DateTime<Utc>
 }
-impl MessageBasis for ConsoleResponses { }
-impl ResponseMessage for ConsoleResponses { }
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserSummary {
+    id: u64,
+    nickname: String
+}
+impl UserSummary {
+    pub fn new(id: u64, nickname: String) -> Self {
+        Self {
+            id, 
+            nickname
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+    pub fn nickname(&self) -> &str {
+        &self.nickname
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserDetails {
+    summ: UserSummary,
+    history: Vec<UserHistoryElement>
+}
+impl Deref for UserDetails {
+    type Target = UserSummary;
+    fn deref(&self) -> &Self::Target {
+        &self.summ
+    }
+}
+impl UserDetails {
+    pub fn new(id: u64, nickname: String, history: Vec<UserHistoryElement>) -> Self {
+        Self {
+            summ: UserSummary::new(id, nickname),
+            history
+        }
+    }
+
+    pub fn history(&self) -> &[UserHistoryElement] {
+        &self.history
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ConsoleAuthResponses {
+    Pending(Vec<PendingUser>),
+    AllUsers(Vec<UserSummary>),
+    SpecificUser(UserDetails),
+    UserNotFound,
+    AuthNotFound
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ConsoleResponses {
+    Ok,
+    Auth(ConsoleAuthResponses)
+}

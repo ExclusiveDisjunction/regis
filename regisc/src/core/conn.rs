@@ -4,7 +4,7 @@ use tokio::net::UnixStream;
 
 use common::{loc::COMM_PATH, msg::ConsoleResponses};
 use common::msg::ConsoleRequests;
-use exdisj::io::msg::{decode_response_async, send_request_async, DecodeError, SendError};
+use exdisj::io::msg::{decode_message_async, send_message_async, DecodeError, SendError};
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -61,10 +61,10 @@ impl Connection {
     }
 
     pub async fn send<T>(&mut self, message: T) -> Result<(), SendError> where T: Into<ConsoleRequests> {
-        send_request_async(message.into(), &mut self.stream).await
+        send_message_async(message.into(), &mut self.stream).await
     }
     pub async fn recv(&mut self) -> Result<ConsoleResponses, DecodeError> {
-        decode_response_async(&mut self.stream).await
+        decode_message_async(&mut self.stream).await
     }
     pub async fn send_with_response<T>(&mut self, message: T) -> Result<ConsoleResponses, ConnectionError> where T: Into<ConsoleRequests> {
         self.send(message).await.map_err(ConnectionError::from)?;
@@ -72,9 +72,9 @@ impl Connection {
     }
 
     pub async fn send_and_expect(&mut self, message: ConsoleRequests) -> Result<(), ConnectionError> {
-        send_request_async(message, &mut self.stream).await.map_err(ConnectionError::from)?;
+        send_message_async(message, &mut self.stream).await.map_err(ConnectionError::from)?;
 
-        match decode_response_async(&mut self.stream).await {
+        match decode_message_async(&mut self.stream).await {
             Ok(v) => {
                 if !matches!(v, ConsoleResponses::Ok) {
                     Err( ConnectionError::Inappropriate )

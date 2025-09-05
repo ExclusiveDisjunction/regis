@@ -1,6 +1,7 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
 
+use common::msg::ConsoleAuthRequests;
 use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
 use exdisj::io::log::ChanneledLogger;
 use tokio::io::{stdout, AsyncWriteExt, Lines, Stdin, Stdout};
@@ -8,6 +9,7 @@ use tokio::{
     runtime::Runtime,
     io::{AsyncBufReadExt as _, BufReader, stdin}
 };
+use clap::Parser;
 
 use crate::core::backend::{Backend, BackendRequests};
 use crate::core::conn::ConnectionError;
@@ -70,6 +72,58 @@ pub async fn prompt(stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) ->
     Ok( raw_command )
 }
 
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum ConfigCommands {
+    Reload,
+    Get,
+    Update
+}
+impl Into<BackendRequests> for ConfigCommands {
+    fn into(self) -> BackendRequests {
+        match self {
+            Self::Reload => BackendRequests::GetConfig,
+            Self::Get => BackendRequests::GetConfig,
+            Self::Update => BackendRequests::UpdateConfig
+        }
+    }
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum AuthCommands {
+    Pending,
+    Revoke { id: u64 },
+    Approve { id: u64 },
+    Users,
+    History { id: u64 }
+}
+impl Into<ConsoleAuthRequests> for AuthCommands {
+    fn into(self) -> ConsoleAuthRequests {
+        match self {
+            Self::Pending => ConsoleAuthRequests::Pending,
+            Self::Users => ConsoleAuthRequests::AllUsers,
+            Self::History { id } => ConsoleAuthRequests::UserHistory(id),
+            Self::Approve { id } => ConsoleAuthRequests::Approve(id),
+            Self::Revoke { id } => ConsoleAuthRequests::Revoke(id)
+        }
+    }
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum CliCommands {
+    Quit,
+    Poll,
+    #[command(subcommand)]
+    Config(ConfigCommands),
+    #[command(subcommand)]
+    Auth(AuthCommands)
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct CliParser {
+    #[command(subcommand)]
+    command: CliCommands
+}
+
 pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), MainLoopFailure> {
     println!("Regis Console v{REGISC_VERSION}");
 
@@ -90,26 +144,31 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
     loop {
         let raw_command = prompt(&mut stdout, &mut lines).await.map_err(MainLoopFailure::from)?;
         let trim = raw_command.trim();
-
-        let command: BackendRequests = match trim {
-            "quit" => break,
-            "poll" => BackendRequests::Poll,
-            "config reload" => BackendRequests::ReloadConfig,
-            "config get" => BackendRequests::GetConfig,
-            "config update" => {
-                todo!()
-            },
-            "auth" => {
-                todo!()
-            },
-            _ => {
-                println!("Unable to parse command '{trim}'. Type 'help' to get a list of open commands.");
+        let parts = trim.split_whitespace();
+        let parts = [">"].into_iter().chain(parts);
+        let command = match CliParser::try_parse_from(parts) {
+            Ok(v) => v.command,
+            Err(e) => {
+                println!("Unable to parse command\n'{e}'");
                 continue;
             }
         };
 
-        log_info!(&logger, "Sending request '{:?}' to backend", &command);
-        match backend.send_with_response(command).await {
+        let request = match command {
+            CliCommands::Quit => break,
+            CliCommands::Poll => BackendRequests::Poll,
+            CliCommands::Config(config) => {
+                config.into()
+            },
+            CliCommands::Auth(auth) => {
+                BackendRequests::Auth(
+                    auth.into()
+                )
+            }
+        };
+
+        log_info!(&logger, "Sending request '{:?}' to backend", &request);
+        match backend.send_with_response(request).await {
             Some(m) => {
                 log_info!(&logger, "The backend sent a response: {m:?}.");
             },

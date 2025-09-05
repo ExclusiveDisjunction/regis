@@ -1,4 +1,4 @@
-use common::msg::{ConsoleRequests, ConsoleResponses};
+use common::msg::{ConsoleAuthRequests, ConsoleAuthResponses, ConsoleRequests, ConsoleResponses};
 use exdisj::{
     log_debug, log_info, log_error, log_warning,
     io::log::ChanneledLogger,
@@ -11,7 +11,7 @@ use crate::core::conn::{Connection, ConnectionError};
 pub enum BackendRequests {
     Poll,
     Shutdown,
-    DetermineAuth,
+    Auth(ConsoleAuthRequests),
     ReloadConfig,
     GetConfig,
     UpdateConfig
@@ -19,7 +19,7 @@ pub enum BackendRequests {
 #[derive(Clone, Debug)]
 pub enum BackendResponses {
     Ok,
-
+    Auth(ConsoleAuthResponses)
 }  
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,7 @@ pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, str
         BackendRequests::Poll => ConsoleRequests::Poll,
         BackendRequests::Shutdown => ConsoleRequests::Shutdown,
         BackendRequests::ReloadConfig => ConsoleRequests::Config,
-        BackendRequests::DetermineAuth => todo!(),
+        BackendRequests::Auth(v) => ConsoleRequests::Auth(v),
         BackendRequests::GetConfig => todo!(),
         BackendRequests::UpdateConfig => todo!(),
     };
@@ -72,7 +72,8 @@ pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, str
 
     Ok( 
         match response {
-            ConsoleResponses::Ok => BackendResponses::Ok
+            ConsoleResponses::Ok => BackendResponses::Ok,
+            ConsoleResponses::Auth(v) => BackendResponses::Auth(v)
         }
     )
 }

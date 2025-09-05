@@ -1,6 +1,7 @@
 use std::{fmt::Display, net::IpAddr};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
+use common::user::CompleteUserInformation;
 use exdisj::{
     log_error, log_info,
     io::log::{ChanneledLogger, LoggerBase},
@@ -126,6 +127,32 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
 
 type AuthManState = Arc<RwLock<Option<AuthManagerState<ChanneledLogger>>>>;
 
+pub struct AuthProvision<'a, L> where L: LoggerBase {
+    inner: RwLockReadGuard<'a, Option<AuthManagerState<L>>>
+}
+impl<'a, L> AsRef<AuthManagerState<L>> for AuthProvision<'a, L> where L: LoggerBase {
+    fn as_ref(&self) -> &AuthManagerState<L> {
+        self.inner.as_ref().unwrap()
+    }
+}
+impl<'a, L> AuthProvision<'a, L> where L: LoggerBase {
+    fn new(inner: RwLockReadGuard<'a, Option<AuthManagerState<L>>>) -> Self {
+        Self {
+            inner
+        }
+    }
+
+    pub fn get_all_users(&'a self) -> Vec<CompleteUserInformation<'a>> {
+        let inner = self.as_ref();
+        inner.user.iter().collect()
+    }
+
+    pub fn get_user_info(&'a self, id: u64) -> Option<CompleteUserInformation<'a>> {
+        let inner = self.as_ref();
+        inner.user.get_user(id)
+    }
+}
+
 #[derive(Debug)]
 pub struct AuthManager {
     rsa: Arc<RsaHandler>,
@@ -182,6 +209,12 @@ impl AuthManager {
             log_info!(&self.logger, "Save complete");
             Ok(())
         }
+    }
+
+    pub fn get_provision(&self) -> AuthProvision<'_, ChanneledLogger> {
+        let guard = self.state.read()
+            .expect("the inner state for authentication was corrupted");
+        AuthProvision::new(guard)
     }
 
     #[allow(clippy::await_holding_lock)]
