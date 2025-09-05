@@ -4,9 +4,14 @@ use std::process::ExitCode;
 use std::io::{stdin, stdout, Stdin, Stdout, Write};
 use std::str::FromStr;
 
-use common::msg::{decode_response, send_request, RequestMessages, ResponseMessages};
-use common::{log_critical, log_debug, log_error};
-use common::error::FormattingError;
+use exdisj::{
+    log_error, log_debug, log_critical,
+    error::FormattingError,
+    io::msg::{decode_response, send_request},
+    io::log::Logger,
+    io::lock::OptionRwProvider
+};
+use common::msg::{RequestMessages, ResponseMessages};
 
 use crate::config::{KnownHost, CONFIG};
 use crate::err::{AVOID_ERR_EXIT, CONFIG_ERR_EXIT, IO_ERR_EXIT};
@@ -81,19 +86,19 @@ pub fn parse_bool(contents: &str, default: bool) -> bool {
     }
 }
 
-pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, ExitCode> {
+pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout, logger: &Logger) -> Result<TcpStream, ExitCode> {
     let raw = prompt("Has this host been connected to before? ", stdout, stdin).to_lowercase();
     let known = parse_bool(&raw, false);
 
     let host: IpAddr;
     if known {
-        log_debug!("Getting known hosts");
+        log_debug!(logger, "Getting known hosts");
         let lock = CONFIG.access();
 
         let hosts = match lock.access() {
             Some(v) => &v.hosts,
             None => {
-                log_error!("Unable to access configuration.");
+                log_error!(logger, "Unable to access configuration.");
                 return Err(ExitCode::from(CONFIG_ERR_EXIT));
             }
         };
@@ -107,14 +112,14 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
 
             let raw_index = prompt("Index: ", stdout, stdin).to_lowercase();
             if raw_index == "q" {
-                log_error!("Aborting connection process, exiting.");
+                log_error!(logger, "Aborting connection process, exiting.");
                 return Err(ExitCode::from(AVOID_ERR_EXIT));
             }
 
             let index: usize = match raw_index.parse() {
                 Ok(v) => v,
                 Err(e) => {
-                    log_debug!("Unable to parse host choice because of '{e}'.");
+                    log_debug!(logger, "Unable to parse host choice because of '{e}'.");
 
                     println!("Unable to parse the value. Try again, or type 'q' to abort.");
                     continue;
@@ -134,14 +139,14 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
         loop {
             let raw_addr = prompt("Please enter an IP address to connect to: ", stdout, stdin);
             if raw_addr == "q" || raw_addr == "Q" {
-                log_error!("Aborting connection process, exiting.");
+                log_error!(logger, "Aborting connection process, exiting.");
                     return Err(ExitCode::from(AVOID_ERR_EXIT));
             }
 
             host = match raw_addr.parse() {
                 Ok(v) => v,
                 Err(e) => {
-                    log_debug!("unable to parse host becuase of '{e}'");
+                    log_debug!(logger, "unable to parse host becuase of '{e}'");
                     println!("Unable to parse the value. Try again, or type 'q' to abort.");
                     continue;
                 }
@@ -153,7 +158,7 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
         let raw_adding = prompt("Add host to the known hosts? ", stdout, stdin).to_lowercase();
         let adding = parse_bool(&raw_adding, false);
         if adding {
-            log_debug!("Attempting to insert into known hosts.");
+            log_debug!(logger, "Attempting to insert into known hosts.");
             let host_name = prompt("Please enter the host's name: ", stdout, stdin);
             
             let to_insert = KnownHost::new(host_name, host);
@@ -161,7 +166,7 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
             match lock.access() {
                 Some(v) => v.hosts.push(to_insert),
                 None => {
-                    log_error!("Unable to access configuration for writing.");
+                    log_error!(logger, "Unable to access configuration for writing.");
                     let raw_continue = prompt("Unable to write to configuration. Do you wish to continue program execution? ", stdout, stdin).to_lowercase();
                     let cont = parse_bool(&raw_continue, false);
 
@@ -173,16 +178,16 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout) -> Result<TcpStream, Exit
         }
     }
 
-    match tool_connect(host) {
+    match tool_connect(host, logger) {
         Ok(v) => Ok(v),
         Err(e) => {
-            log_critical!("Unable to connect: '{e}'");
+            log_critical!(logger, "Unable to connect: '{e}'");
             Err(ExitCode::from(IO_ERR_EXIT))
         }
     }
 }
 
-pub fn cli_entry() -> Result<(), ExitCode> {    
+pub fn cli_entry(logger: &Logger) -> Result<(), ExitCode> {    
     let mut stdin = stdin();
     let mut stdout = stdout();
 
@@ -192,7 +197,7 @@ pub fn cli_entry() -> Result<(), ExitCode> {
 
     println!("Please connect to a host.");
 
-    let mut connection = connect(&mut stdin, &mut stdout)?;
+    let mut connection = connect(&mut stdin, &mut stdout, logger)?;
 
     println!("\n Type h or help for help, otherwise type commands.\n");
 
@@ -201,7 +206,7 @@ pub fn cli_entry() -> Result<(), ExitCode> {
         let command = match Commands::from_str(&raw_message) {
             Ok(c) => c,
             Err(e) => {
-                log_debug!("Unable to parse '{e:?}'");
+                log_debug!(logger, "Unable to parse '{e:?}'");
                 println!("Unable to parse command (Reason: '{e:?}')");
                 continue;
             }
@@ -226,14 +231,14 @@ pub fn cli_entry() -> Result<(), ExitCode> {
         };
 
         if let Err(e) = send_request(message, &mut connection) {
-            log_error!("Unable to send request to server '{e}'");
+            log_error!(logger, "Unable to send request to server '{e}'");
             return Err(ExitCode::from(IO_ERR_EXIT));
         }
 
         let response: ResponseMessages = match decode_response(&mut connection) {
             Ok(v) => v,
             Err(e) => {
-                log_error!("Unable to decode message from server '{e}'");
+                log_error!(logger, "Unable to decode message from server '{e}'");
                 return Err(ExitCode::from(IO_ERR_EXIT));
             }
         };

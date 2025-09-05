@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 
 use crate::loc::CLIENTS_PORT;
-use common::config::{ConfigBase, ConfigurationProvider};
+use exdisj::io::config::{ConfigBase, ConfigurationProvider};
 use common::metric::Utilization;
 
 use std::fmt::Display;
@@ -40,7 +40,7 @@ impl KnownHost {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Configuration {
     pub port: u16,
     pub cpu_warn: Utilization,

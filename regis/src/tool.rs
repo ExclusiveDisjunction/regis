@@ -2,27 +2,28 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 
-use common::log_critical;
+use exdisj::io::log::LoggerBase;
+use exdisj::io::lock::OptionRwProvider;
+use exdisj::log_critical;
 use common::metric::BinaryNumber;
 use common::metric::Utilization;
-pub use common::msg::{send_message, send_request, send_response, decode_message, decode_request, decode_response, Acknoledgement, RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse, SendError};
+pub use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
+//use exdisj::io::msg::{Acknoledgement, SendError};
 
 use crate::config::CONFIG;
 
-pub fn connect(host: IpAddr) -> Result<TcpStream, std::io::Error> {
+pub fn connect<L>(host: IpAddr, logger: &L) -> Result<TcpStream, std::io::Error> where L: LoggerBase {
     let port = match CONFIG.access().access() {
         Some(v) => v.port,
         None => {
-            log_critical!("Unable to get port from configuration.");
+            log_critical!(logger, "Unable to get port from configuration.");
             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "the configuration could not be read"));
         }
     };
 
     println!("Attempting to connect to {} on port {}", &host, port);
 
-    let stream = TcpStream::connect(SocketAddr::from( (host, port) ))?;
-
-    Ok(stream)
+    TcpStream::connect(SocketAddr::from( (host, port) ))
 }
 
 pub const METRICS_HOLDING: usize = 60;

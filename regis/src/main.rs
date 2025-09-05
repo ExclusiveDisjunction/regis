@@ -1,6 +1,6 @@
 pub mod loc;
 pub mod config;
-pub mod gui;
+//pub mod gui;
 pub mod cli;
 pub mod err;
 pub mod tool;
@@ -8,12 +8,17 @@ pub mod tool;
 use clap::Parser;
 use cli::cli_entry;
 
-use common::log::{LoggerLevel, LoggerRedirect, LOG};
-use common::{log_error, log_info};
+use exdisj::{
+    log_error, log_info,
+    io::log::{
+        LoggerLevel, LoggerRedirect, Logger
+    },
+    io::lock::OptionRwProvider
+};
 
 use config::CONFIG;
 use err::{CHECK_ERR_EXIT, LOG_ERR_EXIT};
-use gui::gui_entry;
+//use gui::gui_entry;
 use loc::{get_client_dir, get_config_path, get_log_dir};
 
 use std::fs::create_dir_all;
@@ -23,7 +28,7 @@ use std::process::{ExitCode, exit};
 struct Options {
     /// Instructs the program to run in CLI mode, and to not load a GUI.
     #[arg(long)]
-    no_gui: bool,
+    gui: bool,
 
     #[arg(short, long)]
     verbose: bool,
@@ -61,7 +66,6 @@ fn main() -> Result<(), ExitCode> {
     let is_debugging = cfg!(debug_assertions);
     let level = if is_debugging || command.debug {
         LoggerLevel::Debug
-        
     }
     else {
         LoggerLevel::Info
@@ -82,32 +86,35 @@ fn main() -> Result<(), ExitCode> {
     let today = chrono::Local::now();
     let logger_path = get_log_dir().join(today.to_string());
 
-    if let Err(e) = LOG.open(logger_path, level, redirect) {
-        eprintln!("Unable to start log '{e}'.");
-        exit(LOG_ERR_EXIT as i32);
-    }
+    let logger = match Logger::new(logger_path, level, redirect) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Unable to start log '{e:?}'");
+            return Err(LOG_ERR_EXIT.into());
+        }
+    };
 
     if let Err(e) = CONFIG.open(get_config_path()) {
         eprintln!("Unable to load configuration '{e:?}'. Reseting to default.");
         CONFIG.set_to_default();
     }
 
-    log_info!("Starting regis service.");
-    let result = if command.no_gui {
-        log_info!("CLI mode activated.");
-        cli_entry()
+    log_info!(&logger, "Starting regis service.");
+    let result = if command.gui {
+        log_info!(&logger, "GUI mode activated.");
+        panic!("The GUI for regis is not complete yet.");
     }
     else {
-        log_info!("GUI mode activated.");
-        gui_entry()
+        log_info!(&logger, "CLI mode activated.");
+        cli_entry(&logger)
     };
 
-    log_info!("Saving configuration...");
+    log_info!(&logger, "Saving configuration...");
     if let Err(e) = CONFIG.save(get_config_path()) {
-        log_error!("Unable to save configuration '{e:?}'.");
+        log_error!(&logger, "Unable to save configuration '{e:?}'.");
     }
     else {
-        log_info!("Configuration saved.");
+        log_info!(&logger, "Configuration saved.");
     }
 
     result

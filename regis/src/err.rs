@@ -1,4 +1,4 @@
-pub use common::error::*;
+pub use exdisj::error::*;
 
 pub const CHECK_ERR_EXIT: u8 = 1;
 pub const IO_ERR_EXIT: u8 = 2;
