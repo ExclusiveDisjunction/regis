@@ -26,7 +26,7 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_error, log_info, log_warning, task::{RestartError, ShutdownError, Task}
+    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_debug, log_error, log_info, log_warning, task::{RestartError, ShutdownError, Task}
 };
 
 /// The amount of time between each task "poll".
@@ -126,6 +126,7 @@ impl Orchestrator {
     }
 
     async fn reload_configuration(&mut self) -> Result<(), DaemonFailure> {
+        log_debug!(&self.log, "Opening configuration path");
         if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
             log_error!(&self.log, "Unable to reload configuration, due to '{:?}'.", e);
             if self.options.override_config {
@@ -138,6 +139,7 @@ impl Orchestrator {
                 return Err( DaemonFailure::ConfigurationError );
             }
         }
+        log_info!(&self.log, "The config was reloaded, sending messages to the sub threads.");
     
         let results: [Option<RestartError>; 3] = [
             self.console.send_or_restart(ConsoleComm::ReloadConfiguration, true).await.err(),
@@ -145,7 +147,7 @@ impl Orchestrator {
             self.client.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err()
         ];
 
-        let send_failure = results.iter().all(|x| {
+        let send_failure = !results.iter().all(|x| {
             if let Some(e) = x.as_ref() {
                 log_critical!(&self.log, "Unable to send out configuration reload message due to error: {}", e);
                 false
@@ -154,6 +156,7 @@ impl Orchestrator {
                 true
             }
         });
+        log_debug!(&self.log, "Did all messages get sent correctly? '{}'", !send_failure);
         
         if send_failure {
             log_critical!(&self.log, "Due to config failures, the orch will now shut down.");

@@ -64,7 +64,7 @@ pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, str
         BackendRequests::Shutdown => ConsoleRequests::Shutdown,
         BackendRequests::ReloadConfig => ConsoleRequests::Config,
         BackendRequests::Auth(v) => ConsoleRequests::Auth(v),
-        BackendRequests::GetConfig => todo!(),
+        BackendRequests::GetConfig => ConsoleRequests::Config,
         BackendRequests::UpdateConfig => todo!(),
     };
     log_debug!(logger, "Sending request {:?} to regisd", &request);
