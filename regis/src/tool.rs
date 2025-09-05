@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::net::TcpStream;
+use std::io::Error as IOError;
+use tokio::net::TcpStream;
 
 use exdisj::io::log::LoggerBase;
 use exdisj::io::lock::OptionRwProvider;
@@ -12,7 +13,7 @@ pub use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, M
 
 use crate::config::CONFIG;
 
-pub fn connect<L>(host: IpAddr, logger: &L) -> Result<TcpStream, std::io::Error> where L: LoggerBase {
+pub async fn connect<L>(host: IpAddr, logger: &L) -> Result<TcpStream, IOError> where L: LoggerBase {
     let port = match CONFIG.access().access() {
         Some(v) => v.port,
         None => {
@@ -23,7 +24,8 @@ pub fn connect<L>(host: IpAddr, logger: &L) -> Result<TcpStream, std::io::Error>
 
     println!("Attempting to connect to {} on port {}", &host, port);
 
-    TcpStream::connect(SocketAddr::from( (host, port) ))
+    let address = SocketAddr::from( (host, port) );
+    TcpStream::connect(address).await
 }
 
 pub const METRICS_HOLDING: usize = 60;

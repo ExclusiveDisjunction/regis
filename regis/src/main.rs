@@ -106,7 +106,15 @@ fn main() -> Result<(), ExitCode> {
     }
     else {
         log_info!(&logger, "CLI mode activated.");
-        cli_entry(&logger)
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!(&logger, "Unable to startup tokio runtime.");
+                return Err( ExitCode::FAILURE );
+            }
+        };
+
+        runtime.block_on(cli_entry(&logger))
     };
 
     log_info!(&logger, "Saving configuration...");
