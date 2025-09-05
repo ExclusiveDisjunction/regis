@@ -1,11 +1,12 @@
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::io::Error as IOError;
+use std::time::Duration;
 use tokio::net::TcpStream;
 
 use exdisj::io::log::LoggerBase;
 use exdisj::io::lock::OptionRwProvider;
-use exdisj::log_critical;
+use exdisj::{log_warning, log_critical, log_info};
 use common::metric::BinaryNumber;
 use common::metric::Utilization;
 pub use common::msg::{RequestMessages, ResponseMessages, ServerStatusResponse, MetricsResponse};
@@ -22,10 +23,20 @@ pub async fn connect<L>(host: IpAddr, logger: &L) -> Result<TcpStream, IOError> 
         }
     };
 
-    println!("Attempting to connect to {} on port {}", &host, port);
+    println!("Attempting to connect to {} on port {}, with a timeout of 10s", &host, port);
 
+    let timer = tokio::time::sleep(Duration::from_secs(10));
     let address = SocketAddr::from( (host, port) );
-    TcpStream::connect(address).await
+    tokio::select! {
+        _ = timer => {
+            log_warning!(logger, "Timeout reached.");
+            Err( IOError::new(std::io::ErrorKind::ConnectionRefused, "the connection could not be made."))
+        },
+        stream = TcpStream::connect(address) => {
+            log_info!(logger, "Connection made.");
+            stream
+        }
+    }
 }
 
 pub const METRICS_HOLDING: usize = 60;

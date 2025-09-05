@@ -109,7 +109,7 @@ fn main() -> Result<(), ExitCode> {
         let runtime = match tokio::runtime::Runtime::new() {
             Ok(v) => v,
             Err(e) => {
-                log_error!(&logger, "Unable to startup tokio runtime.");
+                log_error!(&logger, "Unable to startup tokio runtime '{e:?}'.");
                 return Err( ExitCode::FAILURE );
             }
         };
