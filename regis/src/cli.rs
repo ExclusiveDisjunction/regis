@@ -4,14 +4,17 @@ use std::process::ExitCode;
 use std::io::{stdin, stdout, Stdin, Stdout, Write};
 use std::str::FromStr;
 
+use exdisj::io::net::{receive_buffer, send_buffer};
 use exdisj::{
     log_error, log_debug, log_critical,
     error::FormattingError,
-    io::msg::{decode_response, send_request},
     io::log::Logger,
-    io::lock::OptionRwProvider
+    io::lock::OptionRwProvider,
+    auth::{RsaHandler, RsaStream, AesStream, AesHandler}
 };
 use common::msg::{RequestMessages, ResponseMessages};
+use rand::rngs::ThreadRng;
+use rsa_ext::RsaPublicKey;
 
 use crate::config::{KnownHost, CONFIG};
 use crate::err::{AVOID_ERR_EXIT, CONFIG_ERR_EXIT, IO_ERR_EXIT};
@@ -86,7 +89,7 @@ pub fn parse_bool(contents: &str, default: bool) -> bool {
     }
 }
 
-pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout, logger: &Logger) -> Result<TcpStream, ExitCode> {
+pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout, logger: &Logger, rng: &mut ThreadRng) -> Result<AesStream<TcpStream>, ExitCode> {
     let raw = prompt("Has this host been connected to before? ", stdout, stdin).to_lowercase();
     let known = parse_bool(&raw, false);
 
@@ -178,13 +181,67 @@ pub fn connect(stdin: &mut Stdin, stdout: &mut Stdout, logger: &Logger) -> Resul
         }
     }
 
-    match tool_connect(host, logger) {
+    let mut inner_stream = match tool_connect(host, logger) {
         Ok(v) => Ok(v),
         Err(e) => {
             log_critical!(logger, "Unable to connect: '{e}'");
             Err(ExitCode::from(IO_ERR_EXIT))
         }
+    }?;
+
+    //Now the handshake
+    let rsa_pub_priv = RsaHandler::new(rng).map_err(|_| ExitCode::from(IO_ERR_EXIT))?;
+    let (pub_key, priv_key) = rsa_pub_priv.split();
+    let pub_key_as_bytes = match serde_json::to_vec(pub_key.public_key()) {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(logger, "Unable to serialize the RSA public key, error '{e:?}'");
+            return Err( IO_ERR_EXIT.into() )
+        }
+    };
+
+    log_debug!(logger, "Waiting for server RSA key.");
+    let mut server_rsa_bytes: Vec<u8> = vec![];
+    if let Err(e) = receive_buffer(&mut server_rsa_bytes, &mut inner_stream) {
+        log_error!(logger, "Unable to receive the bytes for the server RSA key, error '{e:?}'.");
+        return Err( IO_ERR_EXIT.into() )
     }
+
+    let server_rsa: RsaPublicKey = match serde_json::from_slice(&server_rsa_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(logger, "Unable to deserialize the server's public RSA key, error: '{e:?}'.");
+            return Err( IO_ERR_EXIT.into() );
+        }
+    };
+    log_debug!(logger, "Got server RSA key, sending client RSA key.");
+    if let Err(e) = send_buffer(&pub_key_as_bytes, &mut inner_stream) {
+        log_error!(logger, "Unable to send the public RSA key '{e:?}'");
+        return Err( IO_ERR_EXIT.into() );
+    }
+
+    let complete_rsa = RsaHandler::from_parts(server_rsa, priv_key.into_inner());
+    let mut rsa_stream = RsaStream::new(inner_stream, complete_rsa);
+
+    log_debug!(logger, "Waiting for server's AES key.");
+    let aes_bytes: Vec<u8> = match rsa_stream.receive_bytes() {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(logger, "Unable to get the server's AES key bytes, error '{e:?}'");
+            return Err( IO_ERR_EXIT.into() )
+        }
+    };
+    let aes_key: AesHandler = match AesHandler::from_bytes(&aes_bytes) {
+        Ok(v) => v,
+        Err(_) => {
+            log_error!(logger, "Unable to decode the AES key.");
+            return Err(IO_ERR_EXIT.into())
+        }
+    };
+
+    // Now we can use AES encryption streams
+    log_debug!(logger, "Switching to AES encrypted stream");
+    Ok( AesStream::new(rsa_stream.take().0, aes_key) )
 }
 
 pub fn cli_entry(logger: &Logger) -> Result<(), ExitCode> {    
@@ -197,7 +254,8 @@ pub fn cli_entry(logger: &Logger) -> Result<(), ExitCode> {
 
     println!("Please connect to a host.");
 
-    let mut connection = connect(&mut stdin, &mut stdout, logger)?;
+    let mut rng = rand::thread_rng();
+    let mut connection = connect(&mut stdin, &mut stdout, logger, &mut rng)?;
 
     println!("\n Type h or help for help, otherwise type commands.\n");
 
@@ -230,12 +288,12 @@ pub fn cli_entry(logger: &Logger) -> Result<(), ExitCode> {
             }
         };
 
-        if let Err(e) = send_request(message, &mut connection) {
+        if let Err(e) = connection.send_serialize(&message, &mut rng) {
             log_error!(logger, "Unable to send request to server '{e}'");
             return Err(ExitCode::from(IO_ERR_EXIT));
         }
 
-        let response: ResponseMessages = match decode_response(&mut connection) {
+        let response: ResponseMessages = match connection.receive_deserialize() {
             Ok(v) => v,
             Err(e) => {
                 log_error!(logger, "Unable to decode message from server '{e}'");
