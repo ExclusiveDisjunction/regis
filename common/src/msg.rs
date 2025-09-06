@@ -66,29 +66,32 @@ impl From<MetricsResponse> for ResponseMessages {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub enum ConsoleAuthRequests {
-    Pending,
-    Revoke(u64),
-    Approve(u64),
-    AllUsers,
-    UserHistory(u64)
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum ConsoleRequests {
-    Shutdown,
-    Auth(ConsoleAuthRequests),
-    Config,
-    Poll
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct PendingUser {
     id: u64,
     ip: IpAddr,
     time: DateTime<Utc>
 }
+impl PendingUser {
+    pub fn new(id: u64, ip: IpAddr, time: DateTime<Utc>) -> Self {
+        Self {
+            id,
+            ip,
+            time
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+    pub fn ip(&self) -> IpAddr {
+        self.ip
+    }
+    pub fn time(&self) -> DateTime<Utc> {
+        self.time
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserSummary {
     id: u64,
@@ -134,7 +137,31 @@ impl UserDetails {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleAuthRequests {
+    Pending,         // Response -> Vec<PendingUser>
+    Revoke(u64),     // Response -> bool
+    Approve(u64),    // Response -> bool
+    AllUsers,        // Response -> Vec<UserSummary>
+    UserHistory(u64) // Response -> Vec<UserDetails>
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum ConsoleConfigRequests {
+    Reload, // Response -> ()
+    Get,    // Response -> Config
+    Set     // Response -> ()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ConsoleRequests {
+    Shutdown,                      // Response -> ()
+    Auth(ConsoleAuthRequests),     // Response -> (Depends on request)
+    Config(ConsoleConfigRequests), // Response -> (Depends on request)
+    Poll                           // Response -> ()
+}
+
+#[deprecated]
+//#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ConsoleAuthResponses {
     Pending(Vec<PendingUser>),
     AllUsers(Vec<UserSummary>),
@@ -143,8 +170,10 @@ pub enum ConsoleAuthResponses {
     AuthNotFound
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[deprecated]
+//#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ConsoleResponses {
     Ok,
+    #[allow(deprecated)]
     Auth(ConsoleAuthResponses)
 }

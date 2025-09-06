@@ -1,4 +1,4 @@
-use common::msg::{ConsoleAuthRequests, ConsoleAuthResponses, ConsoleRequests, ConsoleResponses};
+use common::msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests};
 use exdisj::{
     log_debug, log_info, log_error, log_warning,
     io::log::ChanneledLogger,
@@ -58,24 +58,17 @@ pub enum BackendOutput {
     CommFailure
 }
 
-pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, stream: &mut Connection) -> Result<BackendResponses, ConnectionError> {
+pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, stream: &mut Connection) -> Result<Vec<u8>, ConnectionError> {
     let request: ConsoleRequests = match msg {
         BackendRequests::Poll => ConsoleRequests::Poll,
         BackendRequests::Shutdown => ConsoleRequests::Shutdown,
-        BackendRequests::ReloadConfig => ConsoleRequests::Config,
+        BackendRequests::ReloadConfig => ConsoleRequests::Config(ConsoleConfigRequests::Reload),
         BackendRequests::Auth(v) => ConsoleRequests::Auth(v),
-        BackendRequests::GetConfig => ConsoleRequests::Config,
+        BackendRequests::GetConfig => todo!(),
         BackendRequests::UpdateConfig => todo!(),
     };
     log_debug!(logger, "Sending request {:?} to regisd", &request);
-    let response: ConsoleResponses = stream.send_with_response(request).await?;
-
-    Ok( 
-        match response {
-            ConsoleResponses::Ok => BackendResponses::Ok,
-            ConsoleResponses::Auth(v) => BackendResponses::Auth(v)
-        }
-    )
+    stream.send_with_response_bytes(request).await
 }
 
 pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendMessage>, mut stream: Connection) -> BackendOutput {

@@ -1,10 +1,11 @@
 use std::io::Error as IOError;
 
+use serde::de::DeserializeOwned;
 use tokio::net::UnixStream;
 
-use common::{loc::COMM_PATH, msg::ConsoleResponses};
+use common::loc::COMM_PATH;
 use common::msg::ConsoleRequests;
-use exdisj::io::msg::{decode_message_async, send_message_async, DecodeError, SendError};
+use exdisj::io::{msg::{decode_message_async, send_message_async, DecodeError, SendError}, net::receive_buffer_async};
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -63,38 +64,30 @@ impl Connection {
     pub async fn send<T>(&mut self, message: T) -> Result<(), SendError> where T: Into<ConsoleRequests> {
         send_message_async(message.into(), &mut self.stream).await
     }
-    pub async fn recv(&mut self) -> Result<ConsoleResponses, DecodeError> {
+    pub async fn recv_bytes(&mut self) -> Result<Vec<u8>, DecodeError> {
+        let mut result = vec![];
+        receive_buffer_async(&mut result, &mut self.stream).await;
+        Ok(result)
+    }
+    pub async fn recv<T>(&mut self) -> Result<T, DecodeError> where T: DeserializeOwned {
         decode_message_async(&mut self.stream).await
     }
-    pub async fn send_with_response<T>(&mut self, message: T) -> Result<ConsoleResponses, ConnectionError> where T: Into<ConsoleRequests> {
+    pub async fn send_with_response<T, R>(&mut self, message: T) -> Result<R, ConnectionError>
+        where T: Into<ConsoleRequests>,
+        R: DeserializeOwned {
         self.send(message).await.map_err(ConnectionError::from)?;
         self.recv().await.map_err(ConnectionError::from)
     }
-
-    pub async fn send_and_expect(&mut self, message: ConsoleRequests) -> Result<(), ConnectionError> {
-        send_message_async(message, &mut self.stream).await.map_err(ConnectionError::from)?;
-
-        match decode_message_async(&mut self.stream).await {
-            Ok(v) => {
-                if !matches!(v, ConsoleResponses::Ok) {
-                    Err( ConnectionError::Inappropriate )
-                }
-                else {
-                    Ok( () )
-                }
-            }
-            Err(e) => Err( e.into() )
-        }
+    pub async fn send_with_response_bytes<T>(&mut self, message: T) -> Result<Vec<u8>, ConnectionError>
+        where T: Into<ConsoleRequests> {
+        self.send(message).await.map_err(ConnectionError::from)?;
+        self.recv_bytes().await.map_err(ConnectionError::from)
     }
-    
 
-    pub async fn poll(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Poll).await
+    pub async fn poll(&mut self) -> Result<(), SendError> {
+        self.send(ConsoleRequests::Poll).await
     }
-    pub async fn kill(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Shutdown).await
-    }
-    pub async fn config(&mut self) -> Result<(), ConnectionError> {
-        self.send_and_expect(ConsoleRequests::Config).await
+    pub async fn kill(&mut self) -> Result<(), SendError> {
+        self.send(ConsoleRequests::Shutdown).await
     }
 }
