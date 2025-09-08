@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use common::msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests};
+use common::{config::Configuration, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests}};
 use exdisj::{
     log_debug, log_info, log_error, log_warning,
     io::log::ChanneledLogger,
@@ -9,14 +9,14 @@ use exdisj::{
 
 use crate::core::conn::{Connection, ConnectionError};
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub enum BackendRequests {
     Poll,
     Shutdown,
     Auth(ConsoleAuthRequests),
     ReloadConfig,
     GetConfig,
-    UpdateConfig
+    UpdateConfig(Configuration)
 }
 
 #[derive(Clone, Debug)]
@@ -75,8 +75,8 @@ pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, str
         BackendRequests::Shutdown => ConsoleRequests::Shutdown,
         BackendRequests::ReloadConfig => ConsoleRequests::Config(ConsoleConfigRequests::Reload),
         BackendRequests::Auth(v) => ConsoleRequests::Auth(v),
-        BackendRequests::GetConfig => todo!(),
-        BackendRequests::UpdateConfig => todo!(),
+        BackendRequests::GetConfig => ConsoleRequests::Config(ConsoleConfigRequests::Get),
+        BackendRequests::UpdateConfig(config) => ConsoleRequests::Config(ConsoleConfigRequests::Set(config))
     };
     log_debug!(logger, "Sending request {:?} to regisd", &request);
     stream.send_with_response_bytes(request).await

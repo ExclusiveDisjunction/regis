@@ -1,6 +1,7 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
 
+use common::config::Configuration;
 use common::msg::{ConsoleAuthRequests, PendingUser, UserDetails, UserSummary};
 use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
 use exdisj::io::log::{ChanneledLogger, LoggerBase};
@@ -81,9 +82,9 @@ pub enum ConfigCommands {
 impl Into<BackendRequests> for ConfigCommands {
     fn into(self) -> BackendRequests {
         match self {
-            Self::Reload => BackendRequests::GetConfig,
+            Self::Reload => BackendRequests::ReloadConfig,
             Self::Get => BackendRequests::GetConfig,
-            Self::Update => BackendRequests::UpdateConfig
+            Self::Update => todo!("Implement the system that converts this into a series of commands")
         }
     }
 }
@@ -256,7 +257,17 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
                     CliCommands::Auth(inner) => print_auth_response(&logger, inner, &message),
                     CliCommands::Config(inner) => {
                         match inner {
-                            ConfigCommands::Get => todo!(),
+                            ConfigCommands::Get => {
+                                let config_values: Option<Configuration> = match serde_json::from_slice(&message) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        log_error!(&logger, "Unable to decode the server's configurations. (error '{e:?}'");
+                                        continue;
+                                    }
+                                };
+
+                                println!("Console configuration:\n{config_values:#?}");
+                            },
                             ConfigCommands::Reload => println!("The daemon has been notified of the changed configuration."),
                             ConfigCommands::Update => todo!()
                         }

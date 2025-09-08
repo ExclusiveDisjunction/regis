@@ -21,13 +21,11 @@ impl Display for SimpleComm {
 /// A representation of communication between the `Orchestrator` and the console worker tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsoleComm {
-    /// A command to tell the console to approve the authentications that are pending.
-    Auth,
-
-    /// A message to the ochestrator to shutdown all tasks.
-    SystemShutdown,
-    //// A message to the ochestrator to tell other tasks to reload configuration.
-    ReloadConfiguration,
+    /// Instructs the orch to shut down Regisd
+    Shutdown,
+    /// Instructs the orch to reload the configuration and update all threads underneath it.
+    /// The boolean parameter states if Orch should load from a file. When true, the orch will try to read from the config file.
+    ConfigReload(bool)
 }
 impl Display for ConsoleComm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,9 +33,8 @@ impl Display for ConsoleComm {
             f,
             "{}",
             match self {
-                Self::SystemShutdown => "system shutdown",
-                Self::ReloadConfiguration => "configuration reload",
-                Self::Auth => "authentication approved"
+                Self::Shutdown => "system shutdown",
+                Self::ConfigReload(_) => "configuration reload",
             }
         )
     }

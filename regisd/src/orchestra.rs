@@ -26,7 +26,7 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_debug, log_error, log_info, log_warning, task::{RestartError, ShutdownError, Task}
+    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_debug, log_error, log_info, task::{RestartError, ShutdownError, Task}
 };
 
 /// The amount of time between each task "poll".
@@ -125,24 +125,29 @@ impl Orchestrator {
         true
     }
 
-    async fn reload_configuration(&mut self) -> Result<(), DaemonFailure> {
-        log_debug!(&self.log, "Opening configuration path");
-        if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
-            log_error!(&self.log, "Unable to reload configuration, due to '{:?}'.", e);
-            if self.options.override_config {
-                log_info!(&self.log, "By request, the configuration will be reset to defaults.");
-                CONFIG.set_to_default();
+    async fn reload_configuration(&mut self, read_file: bool) -> Result<(), DaemonFailure> {
+        if read_file {
+            log_debug!(&self.log, "Opening configuration path");
+            if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
+                log_error!(&self.log, "Unable to reload configuration, due to '{:?}'.", e);
+                if self.options.override_config {
+                    log_info!(&self.log, "By request, the configuration will be reset to defaults.");
+                    CONFIG.set_to_default();
+                }
+                else {
+                    log_critical!(&self.log, "Configuration could not be updated, terminating.");
+        
+                    return Err( DaemonFailure::ConfigurationError );
+                }
             }
-            else {
-                log_critical!(&self.log, "Configuration could not be updated, terminating.");
-    
-                return Err( DaemonFailure::ConfigurationError );
-            }
+            log_info!(&self.log, "The config was reloaded, sending messages to the sub threads.");
         }
-        log_info!(&self.log, "The config was reloaded, sending messages to the sub threads.");
+        else {
+            log_info!(&self.log, "The configuration reload message will be sent to worker threads.");
+        }
     
         let results: [Option<RestartError>; 3] = [
-            self.console.send_or_restart(ConsoleComm::ReloadConfiguration, true).await.err(),
+            self.console.send_or_restart(ConsoleComm::ConfigReload(false), true).await.err(),
             self.metric.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err(),
             self.client.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err()
         ];
@@ -207,7 +212,7 @@ impl Orchestrator {
                 }
                 _ = signals.hup.recv() => {
                     log_info!(&self.log, "SIGHUP message received from OS, reloading configuration.");
-                    if let Err(e) = self.reload_configuration().await {
+                    if let Err(e) = self.reload_configuration(true).await {
                         err = Some(e);
                         break;
                     }
@@ -216,20 +221,19 @@ impl Orchestrator {
                 m = self.console.force_recv() => {
                     if let Some(m) = m {
                         match m {
-                            ConsoleComm::ReloadConfiguration => {
+                            ConsoleComm::ConfigReload(read_file) => {
                                 log_info!(&self.log, "By request of console thread, the configuration is being reloaded...");
-                                if let Err(e) = self.reload_configuration().await {
+                                if let Err(e) = self.reload_configuration(read_file).await {
                                     err = Some(e);
                                     break;
                                 }
                                 log_info!(&self.log, "Configuration reloaded.");
                             },
-                            ConsoleComm::SystemShutdown => {
+                            ConsoleComm::Shutdown => {
                                 log_info!(&self.log, "By request of console thread, the system is to shutdown...");
                                 log_info!(&self.log, "Shutting down threads...");
                                 break;
-                            },
-                            v => log_warning!(&self.log, "Got innapropriate request from console thread: '{v}'. Ignoring.")
+                            }
                         }
                     }
                     else {

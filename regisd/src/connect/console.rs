@@ -3,21 +3,22 @@ use std::os::unix::fs::PermissionsExt;
 
 use tokio::{
     select,
-    net::{UnixStream, UnixListener},
-    sync::mpsc::{Sender, channel},
+    net::UnixListener,
+    sync::mpsc::channel,
     fs::{create_dir_all, try_exists, remove_file}
 };
 
 use exdisj::{
     io::{
-        lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Prefix}, msg::{decode_message_async, send_message_async}
-    }, log_debug, log_error, log_info, log_warning, task::{ChildComm, TaskMessage, TaskOnce}
+        log::{ChanneledLogger, ConsoleColor, Prefix}
+    }, log_debug, log_error, log_info, task::{ChildComm, TaskMessage, TaskOnce}
 };
 use common::{
-    loc::{COMM_PATH, TOTAL_DIR}, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests, UserDetails, UserSummary}
+    loc::{COMM_PATH, TOTAL_DIR}
 };
 
-use crate::{auth::man::AUTH, config::{Configuration, CONFIG}, msg::{ConsoleComm, WorkerTaskResult}};
+use crate::msg::{ConsoleComm, WorkerTaskResult};
+use super::console_worker::console_worker;
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
 async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, WorkerTaskResult> {
@@ -53,109 +54,6 @@ async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, Wo
     Ok(listener)
 }
 
-/// Represents the actual tasks carried out by connected consoles.
-pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleRequests>) {
-    let auth = AUTH.get().expect("Auth is not initalized");
-
-    loop {
-        select! {
-            v = comm.recv() => { //Something from parent Console
-                match v {
-                    TaskMessage::Poll | TaskMessage::Inner(_) => continue,
-                    TaskMessage::Kill => return
-                }
-            }
-            raw_msg = decode_message_async(&mut source) => {
-                let msg: ConsoleRequests = match raw_msg {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log_error!(&logger, "Unable to decode message from bound client '{e}'");
-                        return;
-                    }
-                };
-
-                log_debug!(&logger, "Processing request '{:?}' from console connection", &msg);
-
-                match msg {
-                    ConsoleRequests::Poll | ConsoleRequests::Shutdown | ConsoleRequests::Config(ConsoleConfigRequests::Reload) => {
-                        if let Err(e) = sender.send(msg).await {
-                            log_error!(&logger, "Unable to send message to console manager: '{e}'.");
-                            return;
-                        }
-
-                        if let Err(e) = send_message_async((), &mut source).await {
-                            log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                            return;
-                        }
-                    },
-                    ConsoleRequests::Config(ConsoleConfigRequests::Get) => {
-                        let result = {
-                            let config = CONFIG.access();
-                            match serde_json::to_vec(&config.access()) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
-                                    serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
-                                }
-                            };
-                        };
-
-                        if let Err(e) = send_message_async(result, &mut source).await {
-                            log_error!(&logger, "Unable to send ok message back to console connection '{e:?}'.");
-                            return;
-                        }
-                    },
-                    ConsoleRequests::Config(ConsoleConfigRequests::Set) => todo!(),
-                    ConsoleRequests::Auth(v) => {
-                        match v {
-                            ConsoleAuthRequests::AllUsers => {
-                                let result: Vec<UserSummary> = {
-                                    let auth_provision = auth.get_provision();
-
-                                    auth_provision.get_all_users()
-                                        .into_iter()
-                                        .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
-                                        .collect()
-                                };
-
-                                if let Err(e) = send_message_async(result, &mut source).await {
-                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                                    return;
-                                };
-                            },
-                            ConsoleAuthRequests::UserHistory(id) => {
-                                let result = {
-                                    let auth_provision = auth.get_provision();
-
-                                    auth_provision.get_user_info(id).map(|user| 
-                                        UserDetails::new(
-                                            user.id(),
-                                            user.nickname().to_string(),
-                                            user.history().to_vec() 
-                                        )
-                                    );
-                                };
-
-                                if let Err(e) = send_message_async(result, &mut source).await {
-                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                                    return;
-                                }
-                            },
-                            ConsoleAuthRequests::Pending => todo!(),
-                            ConsoleAuthRequests::Revoke(id) => {
-                                todo!("revoke the user with id {id}")
-                            }
-                            ConsoleAuthRequests::Approve(id) => {
-                                todo!("approve the authorization with id {id}")
-                            }
-                        };
-                    }
-                };
-            }
-        }
-    };
-}
-
 pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleComm>) -> WorkerTaskResult {
     log_info!(&logger, "Starting listener...");
     let listener = match establish_listener(&logger, ).await {
@@ -167,7 +65,7 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
     };
     log_debug!(&logger, "Listener started.");
 
-    let (send, mut worker_recv) = channel::<ConsoleRequests>(5);
+    let (send, mut worker_recv) = channel::<ConsoleComm>(5);
     let mut active: Vec<TaskOnce<(), ()>> = vec![];
 
     let mut result_status = WorkerTaskResult::Ok;
@@ -231,21 +129,8 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
                 match msg {
                     Some(v) => {
                         log_info!(&logger, "Got message '{:?}' from worker thread.", v);
-                        let to_orch = match v {
-                            ConsoleRequests::Shutdown => ConsoleComm::SystemShutdown,
-                            ConsoleRequests::Auth(auth) => {
-                                todo!("fill out {auth:?}...")
-                            },
-                            ConsoleRequests::Poll => continue,
-                            ConsoleRequests::Config(ConsoleConfigRequests::Reload) => ConsoleComm::ReloadConfiguration,
-                            x => {
-                                log_warning!(&logger, "Got message '{x:?}' from console worker, ignoring.");
-                                continue;
-                            }
-                        };
-                        log_info!(&logger, "Sending {to_orch} to orch");
                         
-                        if !comm.force_send(to_orch).await {
+                        if !comm.force_send(v).await {
                             log_error!(&logger, "Unable to send message to the orch.");
                             result_status = WorkerTaskResult::Failure;
                             break;

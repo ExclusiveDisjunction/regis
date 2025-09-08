@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 
 use exdisj::io::metric::PrettyPrinter;
 
-use crate::{metric::CollectedMetrics, user::UserHistoryElement};
+use crate::{config::Configuration, metric::CollectedMetrics, user::UserHistoryElement};
 
 use std::{fmt::{Debug, Display}, net::IpAddr, ops::Deref};
 
@@ -145,19 +145,51 @@ pub enum ConsoleAuthRequests {
     AllUsers,        // Response -> Vec<UserSummary>
     UserHistory(u64) // Response -> Vec<UserDetails>
 }
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ConsoleConfigRequests {
+    Reload,               // Response -> ()
+    Get,                  // Response -> Config
+    Set(Configuration)    // Response -> bool
+}
+impl ConsoleConfigRequests {
+    pub fn flatten(&self) -> ConsoleConfigFlatRequests {
+        match self {
+            Self::Reload => ConsoleConfigFlatRequests::Reload,
+            Self::Get => ConsoleConfigFlatRequests::Get,
+            Self::Set(_) => ConsoleConfigFlatRequests::Set
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleConfigFlatRequests {
     Reload, // Response -> ()
     Get,    // Response -> Config
     Set     // Response -> ()
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ConsoleRequests {
     Shutdown,                      // Response -> ()
     Auth(ConsoleAuthRequests),     // Response -> (Depends on request)
     Config(ConsoleConfigRequests), // Response -> (Depends on request)
     Poll                           // Response -> ()
+}
+impl ConsoleRequests {
+    pub fn flatten(&self) -> ConsoleFlatRequests {
+        match self {
+            Self::Shutdown => ConsoleFlatRequests::Shutdown,
+            Self::Auth(v) => ConsoleFlatRequests::Auth(*v),
+            Self::Config(v) => ConsoleFlatRequests::Config(v.flatten()),
+            Self::Poll => ConsoleFlatRequests::Poll
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsoleFlatRequests {
+    Shutdown,                         
+    Auth(ConsoleAuthRequests),        
+    Config(ConsoleConfigFlatRequests), 
+    Poll                               
 }
 
 #[deprecated]
