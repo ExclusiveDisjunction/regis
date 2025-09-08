@@ -2,6 +2,7 @@ use std::process::ExitCode;
 use std::io::Error as IOError;
 
 use common::config::Configuration;
+use common::loc::CLIENTS_PORT;
 use common::msg::{ConsoleAuthRequests, PendingUser, UserDetails, UserSummary};
 use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
 use exdisj::io::log::{ChanneledLogger, LoggerBase};
@@ -62,18 +63,22 @@ impl From<ConnectionError> for MainLoopFailure {
     }
 }
 
+pub async fn prompt_raw<V>(content: &V, stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) -> Result<String, IOError> 
+    where V: AsRef<[u8]> + ?Sized {
+        stdout.write(content.as_ref()).await?;
+        stdout.flush().await?;
+
+        let raw_command = lines.next_line()
+            .await?
+            .unwrap_or("quit".to_string());
+
+        Ok( raw_command )
+}
 pub async fn prompt(stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) -> Result<String, IOError> {
-    stdout.write("> ".as_bytes()).await?;
-    stdout.flush().await?;
-
-    let raw_command = lines.next_line()
-        .await?
-        .unwrap_or("quit".to_string());
-
-    Ok( raw_command )
+    prompt_raw("> ", stdout, lines).await
 }
 
-#[derive(Debug, Clone, Copy, clap::Subcommand)]
+#[derive(Debug, Clone, Copy, clap::Subcommand, PartialEq, Eq)]
 pub enum ConfigCommands {
     Reload,
     Get,
@@ -206,6 +211,121 @@ pub async fn prompt_command(stdout: &mut Stdout, lines: &mut Lines<BufReader<Std
     }
 }
 
+pub async fn process_config_update_prompt<L: LoggerBase, T, F>(logger: &L, prompt: &str, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>, default: T, curr: T, mut update: F) 
+    where T: std::fmt::Display + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Debug,
+    F: FnMut(T) -> () {
+    
+    let prompt = format!("{prompt} (Def: {}, Curr: {}): ", default, curr);
+    match prompt_raw(&prompt, stdout, line).await {
+        Ok(raw_curr) => {
+            let trimmed = raw_curr.trim();
+            if !trimmed.is_empty() {
+                let as_num: T = match trimmed.parse() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log_error!(logger, "Invalid value: {e:?}");
+                        println!("Invalid value.");
+                        return;
+                    }
+                };
+
+                update(as_num)
+            }
+        },
+        Err(e) => {
+            log_error!(logger, "Unable to get next line {e:?}");
+            return;
+        }
+    }
+}
+
+pub async fn update_config<L: LoggerBase>(logger: &L, backend: &mut Backend, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>) {
+    log_debug!(logger, "Getting previous configuration.");
+    let raw_bytes = match backend.send_with_response(BackendRequests::GetConfig).await {
+        Some(v) => match v {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_error!(logger, "Unable to retreive the previous configuration, erorr '{e:?}'");
+                return;
+            }
+        },
+        None => {
+            log_error!(logger, "The backend was not able to serve the request.");
+            return;
+        }
+    };
+    let mut configuration: Configuration = match serde_json::from_slice(&raw_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!(logger, "Unable to decode the previous configuration. '{e:?}'");
+            return;
+        }
+    };
+
+    println!("The configuration settings will be listed.\nTo leave a value unchanged, leave the line blank.\nOtherwise, insert your new value.\n");
+
+    process_config_update_prompt(
+        logger, 
+        "# of maximum console connections", 
+        stdout,
+        line, 
+        4, 
+        configuration.max_console,
+        |x| configuration.max_console = x
+    ).await;
+     process_config_update_prompt(
+        logger, 
+        "# of maximum client connections", 
+        stdout,
+        line, 
+        6, 
+        configuration.max_hosts,
+        |x| configuration.max_hosts = x
+    ).await;
+    process_config_update_prompt(
+        logger, 
+        "port # for client connections", 
+        stdout,
+        line, 
+        CLIENTS_PORT, 
+        configuration.hosts_port,
+        |x| configuration.hosts_port = x
+    ).await;
+    process_config_update_prompt(
+        logger, 
+        "metrics collection frequency (s)", 
+        stdout,
+        line, 
+        3, 
+        configuration.metric_freq,
+        |x| configuration.metric_freq = x
+    ).await;
+
+    let new_setting_prompt = format!("Here are the new settings:\n{configuration:#?}\nAre you sure about these changes? (y/n) ");
+    let do_save = {
+        match prompt_raw(&new_setting_prompt, stdout, line).await {
+            Ok(v) => v == "true" || v == "yes" || v == "y" || v == "Y",
+            Err(_) => {
+                log_error!(logger, "Unable to decode yes or no.");
+                return;
+            }
+        }
+    };
+
+    if do_save {
+        log_info!(logger, "Sending the new configuration back to the server.");
+        
+        if backend.send_with_response(BackendRequests::UpdateConfig(configuration)).await.is_some() {
+            println!("New configuration saved.");
+        }
+        else {
+            println!("The new configuration could not be saved.");
+        }
+    }
+
+}
+
 pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), MainLoopFailure> {
     println!("Regis Console v{REGISC_VERSION}");
 
@@ -238,7 +358,13 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
             },
             CliCommands::Poll => BackendRequests::Poll,
             CliCommands::Config(config) => {
-                config.into()
+                if config == ConfigCommands::Update {
+                    update_config(&logger, &mut backend, &mut stdout, &mut lines).await;
+                    continue;
+                }
+                else {
+                    config.into()
+                }
             },
             CliCommands::Auth(auth) => {
                 BackendRequests::Auth(
