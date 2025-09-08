@@ -66,7 +66,8 @@ impl Connection {
     }
     pub async fn recv_bytes(&mut self) -> Result<Vec<u8>, DecodeError> {
         let mut result = vec![];
-        receive_buffer_async(&mut result, &mut self.stream).await;
+        receive_buffer_async(&mut result, &mut self.stream).await
+            .map_err(DecodeError::IO)?;
         Ok(result)
     }
     pub async fn recv<T>(&mut self) -> Result<T, DecodeError> where T: DeserializeOwned {

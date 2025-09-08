@@ -9,18 +9,15 @@ use tokio::{
 };
 
 use exdisj::{
-    log_debug, log_error, log_info,
     io::{
-        log::{ChanneledLogger, ConsoleColor, Prefix},
-        msg::{send_message_async, decode_message_async}
-    },
-    task::{ChildComm, TaskMessage, TaskOnce}
+        lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Prefix}, msg::{decode_message_async, send_message_async}
+    }, log_debug, log_error, log_info, log_warning, task::{ChildComm, TaskMessage, TaskOnce}
 };
 use common::{
-    loc::{COMM_PATH, TOTAL_DIR}, msg::{ConsoleAuthRequests, ConsoleAuthResponses, ConsoleRequests, ConsoleResponses, UserDetails, UserSummary}
+    loc::{COMM_PATH, TOTAL_DIR}, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests, UserDetails, UserSummary}
 };
 
-use crate::{auth::man::AUTH, msg::{ConsoleComm, WorkerTaskResult}};
+use crate::{auth::man::AUTH, config::{Configuration, CONFIG}, msg::{ConsoleComm, WorkerTaskResult}};
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
 async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, WorkerTaskResult> {
@@ -79,33 +76,69 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
 
                 log_debug!(&logger, "Processing request '{:?}' from console connection", &msg);
 
-                let (to_parent, resp) = match msg {
-                    ConsoleRequests::Poll => (Some(ConsoleRequests::Poll), ConsoleResponses::Ok),
-                    ConsoleRequests::Shutdown => (Some(ConsoleRequests::Shutdown), ConsoleResponses::Ok),
-                    ConsoleRequests::Config => (Some(ConsoleRequests::Config), ConsoleResponses::Ok),
+                match msg {
+                    ConsoleRequests::Poll | ConsoleRequests::Shutdown | ConsoleRequests::Config(ConsoleConfigRequests::Reload) => {
+                        if let Err(e) = sender.send(msg).await {
+                            log_error!(&logger, "Unable to send message to console manager: '{e}'.");
+                            return;
+                        }
+
+                        if let Err(e) = send_message_async((), &mut source).await {
+                            log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
+                            return;
+                        }
+                    },
+                    ConsoleRequests::Config(ConsoleConfigRequests::Get) => {
+                        let result = {
+                            let config = CONFIG.access();
+                            match serde_json::to_vec(&config.access()) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
+                                    serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
+                                }
+                            };
+                        };
+
+                        if let Err(e) = send_message_async(result, &mut source).await {
+                            log_error!(&logger, "Unable to send ok message back to console connection '{e:?}'.");
+                            return;
+                        }
+                    },
+                    ConsoleRequests::Config(ConsoleConfigRequests::Set) => todo!(),
                     ConsoleRequests::Auth(v) => {
-                        let resp: ConsoleAuthResponses = match v {
+                        match v {
                             ConsoleAuthRequests::AllUsers => {
-                                let auth_provision = auth.get_provision();
+                                let result: Vec<UserSummary> = {
+                                    let auth_provision = auth.get_provision();
 
-                                let result: Vec<UserSummary> = auth_provision.get_all_users()
-                                    .into_iter()
-                                    .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
-                                    .collect();
+                                    auth_provision.get_all_users()
+                                        .into_iter()
+                                        .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
+                                        .collect()
+                                };
 
-                                ConsoleAuthResponses::AllUsers(result)
+                                if let Err(e) = send_message_async(result, &mut source).await {
+                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
+                                    return;
+                                };
                             },
                             ConsoleAuthRequests::UserHistory(id) => {
-                                let auth_provision = auth.get_provision();
-                                match auth_provision.get_user_info(id) {
-                                    Some(user) => ConsoleAuthResponses::SpecificUser(
+                                let result = {
+                                    let auth_provision = auth.get_provision();
+
+                                    auth_provision.get_user_info(id).map(|user| 
                                         UserDetails::new(
-                                            user.id(), 
-                                            user.nickname().to_string(), 
-                                            user.history().to_vec()
+                                            user.id(),
+                                            user.nickname().to_string(),
+                                            user.history().to_vec() 
                                         )
-                                    ),
-                                    None => ConsoleAuthResponses::UserNotFound
+                                    );
+                                };
+
+                                if let Err(e) = send_message_async(result, &mut source).await {
+                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
+                                    return;
                                 }
                             },
                             ConsoleAuthRequests::Pending => todo!(),
@@ -116,23 +149,8 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                                 todo!("approve the authorization with id {id}")
                             }
                         };
-
-                        let resp = ConsoleResponses::Auth(resp);
-                        (None, resp)
                     }
                 };
-
-                if let Some(msg) = to_parent {
-                    if let Err(e) = sender.send(msg).await {
-                        log_error!(&logger, "Unable to send message to console manager: '{e}'.");
-                        return;
-                    }
-                }
-                
-                if let Err(e) = send_message_async(resp, &mut source).await {
-                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                    return;
-                }
             }
         }
     };
@@ -219,7 +237,11 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
                                 todo!("fill out {auth:?}...")
                             },
                             ConsoleRequests::Poll => continue,
-                            ConsoleRequests::Config => ConsoleComm::ReloadConfiguration
+                            ConsoleRequests::Config(ConsoleConfigRequests::Reload) => ConsoleComm::ReloadConfiguration,
+                            x => {
+                                log_warning!(&logger, "Got message '{x:?}' from console worker, ignoring.");
+                                continue;
+                            }
                         };
                         log_info!(&logger, "Sending {to_orch} to orch");
                         

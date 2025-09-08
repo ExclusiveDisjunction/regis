@@ -145,14 +145,14 @@ pub enum ConsoleAuthRequests {
     AllUsers,        // Response -> Vec<UserSummary>
     UserHistory(u64) // Response -> Vec<UserDetails>
 }
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum ConsoleConfigRequests {
     Reload, // Response -> ()
     Get,    // Response -> Config
     Set     // Response -> ()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ConsoleRequests {
     Shutdown,                      // Response -> ()
     Auth(ConsoleAuthRequests),     // Response -> (Depends on request)

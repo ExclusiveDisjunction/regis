@@ -1,9 +1,9 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
 
-use common::msg::ConsoleAuthRequests;
+use common::msg::{ConsoleAuthRequests, PendingUser, UserDetails, UserSummary};
 use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
-use exdisj::io::log::ChanneledLogger;
+use exdisj::io::log::{ChanneledLogger, LoggerBase};
 use tokio::io::{stdout, AsyncWriteExt, Lines, Stdin, Stdout};
 use tokio::{
     runtime::Runtime,
@@ -72,7 +72,7 @@ pub async fn prompt(stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) ->
     Ok( raw_command )
 }
 
-#[derive(Debug, Clone, clap::Subcommand)]
+#[derive(Debug, Clone, Copy, clap::Subcommand)]
 pub enum ConfigCommands {
     Reload,
     Get,
@@ -88,7 +88,7 @@ impl Into<BackendRequests> for ConfigCommands {
     }
 }
 
-#[derive(Debug, Clone, clap::Subcommand)]
+#[derive(Debug, Clone, Copy, clap::Subcommand)]
 pub enum AuthCommands {
     Pending,
     Revoke { id: u64 },
@@ -124,6 +124,86 @@ pub struct CliParser {
     command: CliCommands
 }
 
+pub fn print_auth_approve_result<L: LoggerBase>(logger: &L, id: u64, message: Option<bool>) {
+    match message {
+        Some(true) => println!("User with id {id} was approved."),
+        Some(false) => println!("User with id {id} could not be approved (Perhaps it has a different id?)."),
+        None => log_error!(logger, "Unable to decode the approval status for user with id {id}")
+    }
+}
+pub fn print_revoke_result<L: LoggerBase>(logger: &L, id: u64, message: Option<bool>) {
+    match message {
+        Some(true) => println!("User with id {id} was revoked."),
+        Some(false) => println!("User with id {id} could not be revoked (Perhaps it has a different id?)."),
+        None => log_error!(logger, "Unable to decode the revoked status for user with id {id}")
+    }
+}
+
+pub fn print_with_deserialization<'de, L: LoggerBase, V: serde::Deserialize<'de>, F>(logger: &L, message: &'de [u8], inner: F) where F: FnOnce(V) -> () {
+    match serde_json::from_slice::<V>(&message) {
+        Ok(value) => inner(value),
+        Err(e) => log_error!(logger, "Unable to decode the users (error: '{e:?}'.")
+    }
+}
+pub fn print_user_history_table(user: UserDetails) {
+    println!("User history for id {} (Aka '{}'):", user.id(), user.nickname());
+    println!("| {:^25} | {:^30} |", "From IP", "Time");
+    println!("| {:-^25} | {:-^30} |", "", "");
+
+    for history in user.history() {
+        println!("| {:>25} | {:>30} |", history.from_ip(), history.at_time())
+    }
+}
+pub fn print_all_users_table(users: Vec<UserSummary>) {
+    if users.is_empty() {
+        println!("Regisd has no users.");
+    }
+    else {
+        println!("| {:^7} | {:^20} |", "ID", "Nickname");
+        println!("| {:-^7} | {:-^20} |", "", "");
+        for user in users {
+            println!("| {:^7} | {:^20} |", user.id(), user.nickname());
+        }
+    }
+}
+pub fn print_pending_users_table(pending_users: Vec<PendingUser>) {
+    if pending_users.is_empty() {
+        println!("Regisd has no pending users for authentication.");
+    }
+    else {
+        println!("| {:^7} | {:^25} | {:^30} |", "ID", "From IP", "Time");
+        println!("| {:-^7} | {:-^25} | {:-^30} |", "", "", "");
+        for pending_user in pending_users {
+            println!("| {:^7} | {:>25} | {:>30} |", pending_user.id(), pending_user.ip(), pending_user.time())
+        }
+    }
+}
+
+pub fn print_auth_response<L: LoggerBase>(logger: &L, inner: AuthCommands, message: &[u8]) {
+    match inner {
+        AuthCommands::Approve { id } => print_auth_approve_result(logger, id, serde_json::from_slice(message).ok()),
+        AuthCommands::Revoke { id } => print_revoke_result(logger, id, serde_json::from_slice(message).ok()),
+        AuthCommands::Pending => print_with_deserialization(logger, message, print_pending_users_table),
+        AuthCommands::Users => print_with_deserialization(logger, message, print_all_users_table),
+        AuthCommands::History { id: _ } => print_with_deserialization(logger, message, print_user_history_table),
+    }
+}
+
+pub async fn prompt_command(stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) -> Result<Option<CliCommands>, MainLoopFailure> {
+    let raw_command = prompt(stdout, lines).await.map_err(MainLoopFailure::from)?;
+    let trim = raw_command.trim();
+    let parts = trim.split_whitespace();
+    let parts = [">"].into_iter().chain(parts);
+
+    match CliParser::try_parse_from(parts) {
+        Ok(v) => Ok(Some(v.command)),
+        Err(e) => {
+            println!("Unable to parse command\n'{e}'");
+            Ok(None)
+        }
+    }
+}
+
 pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), MainLoopFailure> {
     println!("Regis Console v{REGISC_VERSION}");
 
@@ -142,16 +222,9 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
     println!("Type a command, or type quit.");
 
     loop {
-        let raw_command = prompt(&mut stdout, &mut lines).await.map_err(MainLoopFailure::from)?;
-        let trim = raw_command.trim();
-        let parts = trim.split_whitespace();
-        let parts = [">"].into_iter().chain(parts);
-        let command = match CliParser::try_parse_from(parts) {
-            Ok(v) => v.command,
-            Err(e) => {
-                println!("Unable to parse command\n'{e}'");
-                continue;
-            }
+        let command = match prompt_command(&mut stdout, &mut lines).await? {
+            Some(v) => v,
+            None => continue
         };
 
         let request = match command {
@@ -170,7 +243,26 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
         log_info!(&logger, "Sending request '{:?}' to backend", &request);
         match backend.send_with_response(request).await {
             Some(m) => {
-                log_info!(&logger, "The backend sent a response: {m:?}.");
+                let message = match m {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log_error!(&logger, "Unable to get the response due to error '{e}'");
+                        continue;
+                    }
+                };
+
+                match command {
+                    CliCommands::Quit => unreachable!(),
+                    CliCommands::Auth(inner) => print_auth_response(&logger, inner, &message),
+                    CliCommands::Config(inner) => {
+                        match inner {
+                            ConfigCommands::Get => todo!(),
+                            ConfigCommands::Reload => println!("The daemon has been notified of the changed configuration."),
+                            ConfigCommands::Update => todo!()
+                        }
+                    },
+                    CliCommands::Poll => println!("The daemon is active.")
+                }
             },
             None => {
                 log_error!(&logger, "The backend is inactive. Aborting regisc.");
@@ -185,4 +277,40 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
     }
 
     Ok( () )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use chrono::{Utc,Duration};
+    use common::{msg::{PendingUser, UserDetails, UserSummary}, user::UserHistoryElement};
+
+    use crate::cli::{print_all_users_table, print_pending_users_table, print_user_history_table};
+
+    #[test]
+    fn table_printing() {
+        // User history
+        println!("USER HISTORY\n");
+        let details = UserDetails::new(1, "Test User".to_string(), vec![
+            UserHistoryElement::new(Ipv4Addr::new(127, 0, 0, 1).into(), Utc::now() - Duration::days(2)),
+            UserHistoryElement::new(Ipv4Addr::new(127, 0, 0, 1).into(), Utc::now() - Duration::days(1) - Duration::hours(1))
+        ]);
+        print_user_history_table(details);
+
+        println!("\nUSERS TABLE\n");
+        let users = vec![
+            UserSummary::new(1, "User One".to_string()),
+            UserSummary::new(2, "User Two".to_string()),
+            UserSummary::new(3, "User Three".to_string())
+        ];
+        print_all_users_table(users);
+
+        println!("\nPENDING USERS TABLE\n");
+        let pending_users = vec![
+            PendingUser::new(1, Ipv4Addr::new(100, 140, 2, 3).into(), Utc::now() - Duration::minutes(4)),
+            PendingUser::new(2, Ipv6Addr::new(4, 0xAB, 0x36, 0x32, 0xF1, 0x23, 0x34, 0x11).into(), Utc::now() - Duration::hours(1))
+        ];
+        print_pending_users_table(pending_users);
+    }
 }

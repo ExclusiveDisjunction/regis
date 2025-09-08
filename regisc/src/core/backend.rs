@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use common::msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests};
 use exdisj::{
     log_debug, log_info, log_error, log_warning,
@@ -7,7 +9,7 @@ use exdisj::{
 
 use crate::core::conn::{Connection, ConnectionError};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub enum BackendRequests {
     Poll,
     Shutdown,
@@ -16,25 +18,35 @@ pub enum BackendRequests {
     GetConfig,
     UpdateConfig
 }
+
 #[derive(Clone, Debug)]
-pub enum BackendResponses {
-    Ok,
-    Auth(ConsoleAuthResponses)
-}  
+pub enum BackendError {
+
+}
+impl Display for BackendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Nothing so far...")
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum BackendMessage {
     Req(BackendRequests),
-    Resp(BackendResponses)
+    Resp(Result<Vec<u8>, BackendError>)
 }
 impl From<BackendRequests> for BackendMessage {
     fn from(value: BackendRequests) -> Self {
         Self::Req(value)
     }
 }
-impl From<BackendResponses> for BackendMessage {
-    fn from(value: BackendResponses) -> Self {
+impl From<Result<Vec<u8>, BackendError>> for BackendMessage {
+    fn from(value: Result<Vec<u8>, BackendError>) -> Self {
         Self::Resp(value)
+    }
+}
+impl From<BackendError> for BackendMessage {
+    fn from(value: BackendError) -> Self {
+        Self::Resp(Err(value))
     }
 }
 impl BackendMessage {
@@ -44,7 +56,7 @@ impl BackendMessage {
             Self::Resp(_) => None
         }
     }
-    pub fn as_response(self) -> Option<BackendResponses> {
+    pub fn as_response(self) -> Option<Result<Vec<u8>, BackendError>> {
         match self {
             Self::Req(_) => None,
             Self::Resp(r) => Some(r)
@@ -54,7 +66,6 @@ impl BackendMessage {
 
 pub enum BackendOutput {
     Ok,
-    InvalidStream,
     CommFailure
 }
 
@@ -88,7 +99,7 @@ pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendM
                     log_info!(&logger, "Processing request {:?}", &req);
                     match process_request(req, &logger, &mut stream).await {
                         Ok(resp) => {
-                            if !comm.force_send(resp.into()).await {
+                            if !comm.force_send(Ok(resp).into()).await {
                                 log_error!(&logger, "Unable to send response back to the backend controller. Backend exiting.");
                                 result = BackendOutput::CommFailure;
                                 break;
@@ -97,7 +108,7 @@ pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendM
                         Err(e) => {
                             log_error!(&logger, "Unable to process request with error: '{e:?}'. Backend exiting.");
 
-                            result = BackendOutput::InvalidStream;
+                            result = BackendOutput::CommFailure;
                             break;
                         }
                     }
@@ -148,10 +159,10 @@ impl Backend {
     pub async fn send(&self, value: BackendRequests) -> bool {
         self.task.send(value.into()).await
     }
-    pub async fn recv(&mut self) -> Option<BackendResponses> {
+    pub async fn recv(&mut self) -> Option<Result<Vec<u8>, BackendError>> {
         self.task.recv().await?.as_response()
     }
-    pub async fn send_with_response(&mut self, message: BackendRequests) -> Option<BackendResponses> {
+    pub async fn send_with_response(&mut self, message: BackendRequests) -> Option<Result<Vec<u8>, BackendError>> {
         if !self.send(message).await {
             return None
         }
