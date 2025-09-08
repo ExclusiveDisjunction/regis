@@ -112,6 +112,7 @@ impl Into<ConsoleAuthRequests> for AuthCommands {
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum CliCommands {
     Quit,
+    Clear,
     Poll,
     #[command(subcommand)]
     Config(ConfigCommands),
@@ -230,6 +231,11 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
 
         let request = match command {
             CliCommands::Quit => break,
+            CliCommands::Clear => {
+                print!("\x1B[2J\x1b[1;1H");
+                stdout.flush().await.expect("unable to flush");
+                continue;
+            },
             CliCommands::Poll => BackendRequests::Poll,
             CliCommands::Config(config) => {
                 config.into()
@@ -253,11 +259,16 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
                 };
 
                 match command {
-                    CliCommands::Quit => unreachable!(),
+                    CliCommands::Quit | CliCommands::Clear => unreachable!(),
                     CliCommands::Auth(inner) => print_auth_response(&logger, inner, &message),
                     CliCommands::Config(inner) => {
                         match inner {
                             ConfigCommands::Get => {
+                                if cfg!(debug_assertions) {
+                                    let as_string = String::from_utf8(message.clone()).expect("unable to decode the string");
+                                    log_debug!(&logger, "As string: {}", &as_string);
+                                }
+
                                 let config_values: Option<Configuration> = match serde_json::from_slice(&message) {
                                     Ok(v) => v,
                                     Err(e) => {
@@ -266,7 +277,12 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
                                     }
                                 };
 
-                                println!("Console configuration:\n{config_values:#?}");
+                                if let Some(config) = config_values {
+                                    println!("Console configuration:\n{config:#?}");
+                                }
+                                else {
+                                    println!("The daemon's configuration is not loaded properly.");
+                                }
                             },
                             ConfigCommands::Reload => println!("The daemon has been notified of the changed configuration."),
                             ConfigCommands::Update => todo!()

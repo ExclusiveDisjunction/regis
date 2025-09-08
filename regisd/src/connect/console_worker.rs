@@ -6,7 +6,7 @@ use tokio::{
 
 use exdisj::{
     io::{
-        lock::OptionRwProvider, log::ChanneledLogger, msg::{decode_message_async, send_message_async}
+        lock::OptionRwProvider, log::ChanneledLogger, msg::{decode_message_async, send_message_async}, net::send_buffer_async
     }, log_debug, log_error, task::{ChildComm, TaskMessage}
 };
 use common::{
@@ -75,10 +75,10 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                                     log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
                                     serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
                                 }
-                            };
+                            }
                         };
 
-                        if let Err(e) = send_message_async(result, &mut source).await {
+                        if let Err(e) = send_buffer_async(&result, &mut source).await {
                             log_error!(&logger, "Unable to send ok message back to console connection '{e:?}'.");
                             return;
                         }
@@ -143,4 +143,25 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
             }
         }
     };
+}
+
+#[test]
+fn config_get_test() {
+    CONFIG.open(common::loc::DAEMON_CONFIG_PATH).expect("Unable to open config.");
+    let logger = ();
+
+    let config = CONFIG.access();
+    let serialized = match serde_json::to_vec(&config.access()) {
+        Ok(v) => {
+            assert!(config.access().is_some());
+            v
+        }
+        Err(e) => {
+            log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
+            serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
+        }
+    };
+
+    let deserialized: Option<Configuration> = serde_json::from_slice(&serialized).unwrap();
+    assert!(deserialized.is_some());
 }
