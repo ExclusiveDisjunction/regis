@@ -47,19 +47,14 @@ impl<T> PrettyPrinter for Snapshot<T> where T: Metric + PrettyPrinter {
 /// Stores the information about a specific memory section. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
-    /// The name of the memory location
-    pub name: String,
-    /// The total space of that location
     pub total: BinaryNumber,
-    /// The used space of that location
-    pub used: BinaryNumber,
-    /// The free space of the location
     pub free: BinaryNumber,
-    pub shared: Option<BinaryNumber>,
-    pub buff: Option<BinaryNumber>,
-    pub available: Option<BinaryNumber>,
+    pub available: BinaryNumber,
+    pub buff: BinaryNumber,
+    pub cached: BinaryNumber
 }
 impl Metric for MemoryMetric {}
+/*
 impl PrettyPrinter for MemoryMetric {
     fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs = "\t".repeat(tabs as usize);
@@ -82,6 +77,7 @@ impl PrettyPrinter for MemoryMetric {
         }
     }
 }
+     */
 
 /// Stores the information about a specific storage section.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
@@ -241,6 +237,7 @@ pub struct CollectedMetrics {
     pub network: Option<NetworkSnapshot>,
     pub proc_count: Option<ProcessCount>
 }
+/*
 impl PrettyPrinter for CollectedMetrics {
     fn pretty_print(&self, tabs: u8, index: Option<usize>) -> String {
         let tabs_string = "\t".repeat(tabs as usize);
@@ -266,7 +263,8 @@ impl PrettyPrinter for CollectedMetrics {
         format!("{tabs_ref}{header}Metrics at {time}:{tabs_ref}\n   CPU:\n{cpu}\n\n\n{tabs_ref}   Memory:\n{memory}\n{tabs_ref}   Storage:\n{storage}\n{tabs_ref}   Network:\n{network}\n   {proc_count}")
     }
 }
+     */
 
-pub type MemorySnapshot = Snapshot<MemoryMetric>;
+pub type MemorySnapshot = MemoryMetric;
 pub type StorageSnapshot = Snapshot<StorageMetric>;
 pub type NetworkSnapshot = Snapshot<NetworkMetric>;

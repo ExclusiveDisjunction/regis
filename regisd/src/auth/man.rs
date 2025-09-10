@@ -1,6 +1,7 @@
 use std::{fmt::Display, net::IpAddr};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
+//use common::msg::PendingUser;
 use common::user::CompleteUserInformation;
 use exdisj::{
     log_error, log_info,
@@ -68,14 +69,16 @@ impl std::error::Error for RenewalError { }
 #[derive(Debug)]
 struct AuthManagerState<L> where L: LoggerBase {
     sess: SessionsManager<L>,
-    user: UserManager<L>
+    user: UserManager<L>,
+    //app: ApprovalsManager
 }
 impl<L> AuthManagerState<L> where L: LoggerBase {
     async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
         log_info!(&logger, "Opening the authentication inner state");
         Self {
             sess: SessionsManager::open_or_default(rng, logger.clone()).await,
-            user: UserManager::open_or_default(logger).await
+            user: UserManager::open_or_default(logger).await,
+            //app: ApprovalsManager::default()
         }
     }
     async fn save(&self) -> Result<(), std::io::Error> {
@@ -123,6 +126,26 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
     fn revoke_user(&mut self, id: u64) {
         self.user.revoke(id);
     }
+
+    /*
+    fn register_new_user(&mut self, from_ip: IpAddr) {
+        self.app.register_new_user(from_ip)
+    }
+    fn pending_approvals(&self) -> Vec<&PendingUser> {
+        self.app.pending()
+    }
+    fn approve_user<R>(&mut self, with_id: u64, nickname: String, rng: &mut R) -> Result<ClientUserInformation, ApprovalError>
+        where R: RngCore + CryptoRng {
+            let pending = self.app.approve_user(with_id)
+                .ok_or(ApprovalError::UserNotFound(with_id))?;
+            // We have to award it a new name & ID
+            
+            let new_user = 
+    }
+    fn deny_user(&mut self, with_id: u64) -> bool {
+        self.app.deny_user(with_id)
+    } 
+    */
 }
 
 type AuthManState = Arc<RwLock<Option<AuthManagerState<ChanneledLogger>>>>;

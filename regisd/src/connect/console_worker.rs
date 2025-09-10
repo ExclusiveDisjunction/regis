@@ -130,7 +130,9 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                                     return;
                                 }
                             },
-                            ConsoleAuthRequests::Pending => todo!(),
+                            ConsoleAuthRequests::Pending => {
+                                todo!()
+                            },
                             ConsoleAuthRequests::Revoke(id) => {
                                 todo!("revoke the user with id {id}")
                             }
