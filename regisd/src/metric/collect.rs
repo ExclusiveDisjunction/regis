@@ -59,10 +59,12 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
                 None => name
             };
 
-            let mut converted = iter
+            let converted = iter
                 .map(|x| x.parse::<u64>().ok())
                 .map(|x| x.map(BinaryNumber::parse));
 
+            todo!("Turn {converted:?} into memory metrics.");
+            /*
             list.push(MemoryMetric {
                 name: name.to_string(),
                 total: converted.next()??,
@@ -72,6 +74,7 @@ pub async fn collect_memory() -> Option<MemorySnapshot> {
                 buff: converted.next().unwrap_or(None),
                 available: converted.next().unwrap_or(None),
             })
+             */
         }
 
         Some(MemorySnapshot::new(list))

@@ -21,6 +21,8 @@ use common::{
     user::{UserHistoryElement, CompleteUserInformationMut}
 };
 
+use super::app::{ApprovalsManager, ApprovalRequestFuture};
+
 use super::{
     sess::{JwtDecodeError, SessionsManager},
     user_man::UserManager
@@ -70,7 +72,7 @@ impl std::error::Error for RenewalError { }
 struct AuthManagerState<L> where L: LoggerBase {
     sess: SessionsManager<L>,
     user: UserManager<L>,
-    //app: ApprovalsManager
+    app: ApprovalsManager
 }
 impl<L> AuthManagerState<L> where L: LoggerBase {
     async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
@@ -78,7 +80,7 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
         Self {
             sess: SessionsManager::open_or_default(rng, logger.clone()).await,
             user: UserManager::open_or_default(logger).await,
-            //app: ApprovalsManager::default()
+            app: ApprovalsManager::default()
         }
     }
     async fn save(&self) -> Result<(), std::io::Error> {
@@ -125,6 +127,18 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
     }
     fn revoke_user(&mut self, id: u64) {
         self.user.revoke(id);
+    }
+
+    fn register_user_request(&mut self, from_ip: IpAddr) -> ApprovalRequestFuture {
+        let request = self.app.register_request(from_ip);
+
+        let future = ApprovalRequestFuture::new(**request);
+        request.with_async(&future);
+
+        future
+    }
+    fn approve_user(&mut self, with_id: u64) {
+        
     }
 
     /*
