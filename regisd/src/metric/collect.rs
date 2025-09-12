@@ -13,7 +13,7 @@ use tokio::process::Command;
 
 pub use common::metric::*;
 
-pub async fn collect_memory() -> Option<MemorySnapshot> {
+pub async fn collect_memory() -> Option<MemoryMetric> {
     if cfg!(target_os = "linux") {
         let output = Command::new("free").arg("-b").output().await.ok()?;
 

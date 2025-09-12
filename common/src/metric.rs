@@ -265,6 +265,5 @@ impl PrettyPrinter for CollectedMetrics {
 }
      */
 
-pub type MemorySnapshot = MemoryMetric;
 pub type StorageSnapshot = Snapshot<StorageMetric>;
 pub type NetworkSnapshot = Snapshot<NetworkMetric>;
