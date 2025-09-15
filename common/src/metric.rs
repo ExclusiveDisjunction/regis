@@ -6,20 +6,12 @@ pub use exdisj::io::metric::{Utilization, BinaryNumber, BinaryScale, PrettyPrint
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
 
 /// Represents a collection of metrics that are taken at the same time.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot<T>
 where
     T: Metric,
 {
     pub metrics: Vec<T>,
-}
-impl<T> PartialEq for Snapshot<T>
-where
-    T: Metric,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.metrics.eq(&other.metrics)
-    }
 }
 impl<T> Metric for Snapshot<T> where T: Metric {}
 impl<T> Snapshot<T>
