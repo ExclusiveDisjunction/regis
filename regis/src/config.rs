@@ -61,7 +61,6 @@ impl Default for Configuration {
         }
     }
 }
-impl ConfigBase for Configuration {}
 impl Configuration {}
 
 lazy_static! {

@@ -19,5 +19,5 @@ tokio = "1.44.1"
 rand_core = "0.6.4"
 rand = "0.8.5"
 rsa_ext = { version = "0.1.2", features = ["serde"] }
-# gtk4 = { version = "0.9.6", package = "gtk4", features = ["v4_4"] }
-# glib = "0.17"
+gtk4 = { version = "0.10.1", package = "gtk4", features = ["v4_10"] }
+glib = "*"

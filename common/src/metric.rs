@@ -223,7 +223,7 @@ impl PrettyPrinter for NetworkMetric {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct CollectedMetrics {
     pub time: i64,
-    pub memory: Option<MemorySnapshot>,
+    pub memory: Option<()>,
     pub storage: Option<StorageSnapshot>,
     pub cpu: Option<CpuMetric>,
     pub network: Option<NetworkSnapshot>,

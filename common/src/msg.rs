@@ -17,7 +17,7 @@ impl Display for ServerStatusResponse {
         write!(
             f,
             "{}",
-            self.info.pretty_print(0, None)
+            todo!(), //self.info.pretty_print(0, None)
         )
     }
 }
@@ -30,7 +30,7 @@ impl Display for MetricsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let each_metric: Vec<String> = self.info.iter()
         .enumerate()
-            .map(|(i, x)| x.pretty_print(0, Some(i+1)))
+            .map(|(i, x)| todo!()) //x.pretty_print(0, Some(i+1)))
             .collect();
 
         let joined = each_metric.join("\n");

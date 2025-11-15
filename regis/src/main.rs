@@ -1,6 +1,6 @@
 pub mod loc;
 pub mod config;
-//pub mod gui;
+pub mod gui;
 pub mod cli;
 pub mod err;
 pub mod tool;
@@ -27,8 +27,8 @@ use std::process::{ExitCode, exit};
 #[derive(Parser, Debug)]
 struct Options {
     /// Instructs the program to run in CLI mode, and to not load a GUI.
-    #[arg(long)]
-    gui: bool,
+    #[arg(short = 'g', long)]
+    graphical: bool,
 
     #[arg(short, long)]
     verbose: bool,
@@ -100,9 +100,10 @@ fn main() -> Result<(), ExitCode> {
     }
 
     log_info!(&logger, "Starting regis service.");
-    let result = if command.gui {
+    let result = if command.graphical {
         log_info!(&logger, "GUI mode activated.");
-        panic!("The GUI for regis is not complete yet.");
+        crate::gui::gui_entry();
+        Ok( () )
     }
     else {
         log_info!(&logger, "CLI mode activated.");

@@ -359,7 +359,7 @@ pub async fn main_loop<R>(lines: &mut Lines<BufReader<Stdin>>, out: &mut Stdout,
             };
 
             match response {
-                ResponseMessages::Ack(_) => (),
+                //ResponseMessages::Ack(_) => (),
                 ResponseMessages::Metrics(m) => {
                     println!("Current metrics:\n{m:#?}");
                 }
