@@ -138,6 +138,7 @@ pub async fn resolve_from_known(lines: &mut Lines<BufReader<Stdin>>, out: &mut S
 
         return Ok( *hosts[index - 1].addr() );
     }
+    
 }
 
 pub async fn resolve_from_prompts(lines: &mut Lines<BufReader<Stdin>>, out: &mut Stdout, logger: &Logger) -> Result<IpAddr, DestinationResolveError> {

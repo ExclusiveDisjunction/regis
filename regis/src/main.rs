@@ -102,8 +102,8 @@ fn main() -> Result<(), ExitCode> {
     log_info!(&logger, "Starting regis service.");
     let result = if command.graphical {
         log_info!(&logger, "GUI mode activated.");
-        crate::gui::gui_entry();
-        Ok( () )
+        crate::gui::gui_entry()
+            .map_err(|x| ExitCode::from(x.get()))
     }
     else {
         log_info!(&logger, "CLI mode activated.");

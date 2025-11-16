@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 
 use crate::loc::CLIENTS_PORT;
-use exdisj::io::config::{ConfigBase, ConfigurationProvider};
+use exdisj::io::config::ConfigurationProvider;
 use common::metric::Utilization;
 
 use std::fmt::Display;

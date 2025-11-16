@@ -1,9 +1,11 @@
-use glib::ExitCode;
-use gtk4::ffi::GtkStringList;
-use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Label, Box, Orientation, Entry, Button, DropDown, Grid};
+use glib::{ExitCode, GString};
+use gtk4::{AlertDialog, Align, CenterBox, StackTransitionType, prelude::*};
+use gtk4::{Application, ApplicationWindow, Label, Box, Orientation, Entry, Button, DropDown, Grid, Stack, StackSwitcher};
+
+pub mod ip4entry;
 
 pub const APPLICATION_ID: &'static str = "com.exdisj.regis.regis";
+
 
 pub fn gui_entry() -> Result<(), ExitCode> {
     let app = Application::builder()
@@ -22,12 +24,19 @@ pub fn gui_entry() -> Result<(), ExitCode> {
             title_box.append(&sub_title);
         }
 
-        let sign_in_box = Box::new(Orientation::Horizontal, 5);
+        let sign_in_stack = Stack::builder()
+            .transition_type(StackTransitionType::SlideLeftRight)
+            .hexpand(true)
+            .halign(Align::Center)
+            .build();
+        let left_sign_in_box = Grid::builder()
+            .column_spacing(5)
+            .row_spacing(5)
+            .halign(Align::Center)
+            .build();
+        let right_sign_in_box = CenterBox::new();
         {
-            let left_sign_in_box = Box::new(Orientation::Vertical, 5);
             {
-                let title = Label::new(Some("Previous Connection"));
-
                 let label_a = Label::builder()
                     .label("IPv4:")
                     .justify(gtk4::Justification::Right)
@@ -37,63 +46,49 @@ pub fn gui_entry() -> Result<(), ExitCode> {
                     .justify(gtk4::Justification::Right)
                     .build();
 
-                let ip_v4 = Entry::new();
+                let ip_v4 = ip4entry::IPv4Entry::new();
                 let auth_method = DropDown::from_strings(&["Keychain"]);
 
-                let grid = Grid::builder()
-                    .column_spacing(5)
-                    .row_spacing(5)
-                    .build();
-                grid.attach(&label_a, 0, 0, 1, 1);
-                grid.attach(&label_b, 0, 1,1, 1);
-                grid.attach(&ip_v4, 1, 0, 1, 1);
-                grid.attach(&auth_method, 1, 1, 1, 1);
-
-                let submit = Button::builder()
-                    .label("Connect")
-                    .build();
-
-                submit.connect_clicked(|x| {
-                    todo!("Handle connection...");
-                });
-
-                left_sign_in_box.append(&title);
-                left_sign_in_box.append(&grid);
-                left_sign_in_box.append(&submit);
+                
+                left_sign_in_box.attach(&label_a, 0, 0, 1, 1);
+                left_sign_in_box.attach(&label_b, 0, 1,1, 1);
+                left_sign_in_box.attach(&ip_v4, 1, 0, 1, 1);
+                left_sign_in_box.attach(&auth_method, 1, 1, 1, 1);
             }
 
-            let right_sign_in_box = Box::new(Orientation::Vertical, 5);
             {
-                let title = Label::new(Some("New Connection"));
-
-                let container = Box::new(Orientation::Horizontal, 5);
-                container.append(&Label::new(Some("IPv4:")));
-                let ip_v4 = Entry::new();
-                container.append(&ip_v4);
-
-                let submit = Button::builder()
-                    .label("Connect")
+                let frame = Box::builder()
+                    .halign(Align::Center)
+                    .orientation(Orientation::Horizontal)
+                    .spacing(5)
+                    .vexpand(false)
                     .build();
 
-                submit.connect_clicked(|x| {
-                    todo!("Handle connection...");
-                });
+                frame.append(&Label::new(Some("IPv4:")));
+                let ip_v4 = ip4entry::IPv4Entry::new();
+                frame.append(&ip_v4);
 
-                right_sign_in_box.append(&title);
-                right_sign_in_box.append(&container);
-                right_sign_in_box.append(&submit);
+                right_sign_in_box.set_center_widget(Some(&frame));
             }
 
-            let divider = gtk4::Separator::new(Orientation::Vertical);
-
-            sign_in_box.append(&left_sign_in_box);
-            sign_in_box.append(&divider);
-            sign_in_box.append(&right_sign_in_box);
+            sign_in_stack.add_titled(&left_sign_in_box, Some("signIn"), "Previous Connection");
+            sign_in_stack.add_titled(&right_sign_in_box, Some("newConn"), "New Connection");
         }
+
+        let switcher = StackSwitcher::builder()
+            .stack(&sign_in_stack)
+            .build();
+
+        let submit = Button::builder()
+            .label("Connect")
+            .hexpand(false)
+            .build();
 
         let content_box = Box::new(Orientation::Vertical, 5);
         content_box.append(&title_box);
-        content_box.append(&sign_in_box);
+        content_box.append(&switcher);
+        content_box.append(&sign_in_stack);
+        content_box.append(&submit);
 
         let window = ApplicationWindow::builder()
             .title("Regis")
@@ -102,6 +97,45 @@ pub fn gui_entry() -> Result<(), ExitCode> {
             .default_height(600)
             .default_width(700)
             .build();
+
+        let internal_error = AlertDialog::builder()
+            .modal(true)
+            .detail("We are sorry, but an internal error occured.")
+            .message("Internal Error")
+            .default_button(0)
+            .buttons(["Ok"])
+            .build();
+
+        submit.connect_clicked(
+            glib::clone!(
+                #[weak] 
+                sign_in_stack,
+
+                #[weak]
+                window,
+
+                #[strong]
+                internal_error,
+
+                move |_button| {
+                    let page = sign_in_stack.visible_child_name();
+
+                    let sign_in = GString::from("signIn");
+                    let new_conn = GString::from("newConn");
+                    if page == Some(sign_in) {
+                        println!("Sign in reached")
+                    }
+                    else if page == Some(new_conn) {
+                        println!("New connection reached")
+                    }
+                    else {
+                        eprintln!("The current page {page:?} could not be parsed as a valid page.");
+
+                        internal_error.show(Some(&window));
+                    }
+                }
+            )
+        );
 
         window.present()
     });
