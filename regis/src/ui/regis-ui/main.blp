@@ -1,0 +1,60 @@
+using Gtk 4.0;
+
+template SignInScreen : Box {
+  orientation: vertical;
+  
+  Box {
+    orientation: vertical;
+    spacing: 10;
+    margin-bottom: 20;
+    
+    Label {
+      label: "Welcome to Regis";
+      styles [
+        "title-1"
+      ]
+    }
+    
+    Label {
+      label: "Please connect to a server";
+      styles [
+        "title-2"
+      ]
+    }
+  }
+  
+  Box {
+    layout-manager: GridLayout sign_in_grid_layout {
+      column-spacing: 5;
+      row-spacing: 5;
+    };
+    
+    Label {
+      label: "IPv4:";
+    }
+    Label {
+      label: "Authenticate Using:";
+      GridLayoutChild {
+        row: 1;
+        column: 0;
+        layout-manager: sign_in_grid_layout;
+      }
+    }
+    
+    Entry {
+      GridLayoutChild {
+        row: 0;
+        column: 1;
+        layout-manager: sign_in_grid_layout;
+      }
+    }
+    
+    DropDown {
+        GridLayoutChild {
+          row: 1;
+          column: 1;
+          layout-manager: sign_in_grid_layout;
+        }
+    }
+  }
+}
