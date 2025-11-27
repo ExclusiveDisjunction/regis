@@ -13,7 +13,7 @@ use tokio::process::Command;
 
 pub use common::metric::*;
 
-pub async fn collect_memory() -> Option<MemoryMetric> {
+pub async fn collect_memory() -> Option<MultiValuedMetric<MemoryMetric>> {
     if cfg!(target_os = "linux") {
         let output = Command::new("free").arg("-b").output().await.ok()?;
 
@@ -59,31 +59,27 @@ pub async fn collect_memory() -> Option<MemoryMetric> {
                 None => name
             };
 
-            let converted = iter
+            let mut converted = iter
                 .map(|x| x.parse::<u64>().ok())
                 .map(|x| x.map(BinaryNumber::parse));
 
-            todo!("Turn {converted:?} into memory metrics.");
-            /*
             list.push(MemoryMetric {
-                name: name.to_string(),
+                device: name.to_string(),
                 total: converted.next()??,
-                used: converted.next()??,
                 free: converted.next()??,
-                shared: converted.next().unwrap_or(None),
-                buff: converted.next().unwrap_or(None),
-                available: converted.next().unwrap_or(None),
+                available: converted.next()??,
+                buff: converted.next()??,
+                cached: BinaryNumber::new(0.0, BinaryScale::Byte)
             })
-             */
         }
 
-        Some(MemorySnapshot::new(list))
+        Some(MultiValuedMetric::new(list))
     } else {
         None
     }
 }
 
-pub async fn collect_storage() -> Option<StorageSnapshot> {
+pub async fn collect_storage() -> Option<MultiValuedMetric<StorageMetric>> {
     if !cfg!(target_os="linux") {
         return None;
     }
@@ -161,7 +157,7 @@ pub async fn collect_storage() -> Option<StorageSnapshot> {
     }
 
     Some(
-        StorageSnapshot::new(result)
+        MultiValuedMetric::new(result)
     )
 }
 
@@ -240,14 +236,12 @@ pub async fn collect_cpu() -> Option<CpuMetric> {
             nice: utils[2],
             idle: utils[3],
             waiting: parsed_values[4],
-            h_interupts: parsed_values[5],
-            s_interupts: parsed_values[6],
             steal: parsed_values[7],
         }
     )
 }
 
-pub async fn collect_network() -> Option<NetworkSnapshot> {
+pub async fn collect_network() -> Option<MultiValuedMetric<NetworkMetric>> {
     if !cfg!(target_os = "linux") {
         return None;
     }
@@ -316,7 +310,7 @@ pub async fn collect_network() -> Option<NetworkSnapshot> {
     }   
 
     Some(
-        NetworkSnapshot::new(result)
+        MultiValuedMetric::new(result)
     )
 }
 
@@ -350,7 +344,7 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
 }
 
 pub async fn collect_all_snapshots() -> CollectedMetrics {
-    let time = chrono::Local::now().timestamp();
+    let time = chrono::Utc::now();
 
     CollectedMetrics {
         time,
