@@ -126,7 +126,7 @@ impl std::future::Future for ApprovalRequestFuture {
 }
 
 #[derive(Debug)]
-pub(super) struct ApprovalsManager {
+pub(crate) struct ApprovalsManager {
     current_id: u64,
     pending: HashMap<u64, ApprovalRequest>
 }
@@ -139,8 +139,11 @@ impl Default for ApprovalsManager {
     }
 }
 impl ApprovalsManager {
-    pub(super) fn pending(&self) -> Vec<&PendingUser> {
+    pub(crate) fn pending(&self) -> Vec<&PendingUser> {
         self.pending.values().map(|x| x.deref() ).collect()
+    }
+    pub(super) fn contains_pending(&self, id: u64) -> bool {
+        self.pending.contains_key(&id)
     }
     pub(super) fn register_request(&mut self, from_ip: IpAddr) -> &mut ApprovalRequest {
         let id = self.current_id;

@@ -240,6 +240,9 @@ impl<L> UserManager<L> where L: LoggerBase {
         #[allow(deprecated)]
         target.complete_mut(new_id)
     }
+    pub fn delete_user(&mut self, id: u64) -> Option<UserInformation> {
+        self.users.remove(&id)
+    }
     pub fn revoke(&mut self, user: u64) {
         log_info!(&self.logger, "Revoking user with id '{user}'");
         self.revoked.insert(user);

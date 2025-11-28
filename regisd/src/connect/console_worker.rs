@@ -13,10 +13,71 @@ use common::{
     config::Configuration, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleFlatRequests, ConsoleRequests, UserDetails, UserSummary}
 };
 
-use crate::{auth::man::AUTH, config::CONFIG, msg::ConsoleComm};
+use crate::{auth::man::{AUTH, AuthManager}, config::CONFIG, msg::ConsoleComm};
+
+async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, source: &mut UnixStream, auth: &AuthManager) -> bool {
+     match v {
+        ConsoleAuthRequests::AllUsers => {
+            let result: Vec<UserSummary> = {
+                let auth_provision = auth.get_provision();
+
+                auth_provision.await.as_ref().all_users()
+                    .into_iter()
+                    .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
+                    .collect()
+            };
+
+            if let Err(e) = send_message_async(result,  source).await {
+                log_error!(logger, "Unable to send ok message back to console connection: '{e}'.");
+                return false;
+            };
+        },
+        ConsoleAuthRequests::UserHistory(id) => {
+            let result = {
+                let auth_provision = auth.get_provision();
+
+                auth_provision.await.as_ref().user_info(id).map(|user| 
+                    UserDetails::new(
+                        user.id(),
+                        user.nickname().to_string(),
+                        user.history().to_vec() 
+                    )
+                );
+            };
+
+            if let Err(e) = send_message_async(result, source).await {
+                log_error!(logger, "Unable to send ok message back to console connection: '{e}'.");
+                return false;
+            }
+        },
+        ConsoleAuthRequests::Pending => {
+            let result: Vec<_> = {
+                let auth_provision = auth.get_provision();
+
+                auth_provision.await.as_mut().approvals().pending()
+                    .into_iter()
+                    .cloned()
+                    .collect()
+            };
+
+            if let Err(e) = send_message_async(result, source).await {
+                log_error!(logger, "Unable to send message back to console connection: '{e}'.");
+                return false;
+            }
+        },
+        ConsoleAuthRequests::Revoke(id) => {
+            todo!("revoke the user with id {id}")
+        }
+        ConsoleAuthRequests::Approve(id) => {
+            todo!("approve the authorization with id {id}")
+        }
+    };
+
+    true
+}
 
 /// Represents the actual tasks carried out by connected consoles.
-pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleComm>) {
+pub(crate) async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleComm>) {
     let auth = AUTH.get().expect("Auth is not initalized");
 
     loop {
@@ -96,51 +157,11 @@ pub async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mu
                         }
                     },
                     ConsoleRequests::Auth(v) => {
-                        match v {
-                            ConsoleAuthRequests::AllUsers => {
-                                let result: Vec<UserSummary> = {
-                                    let auth_provision = auth.get_provision();
-
-                                    auth_provision.get_all_users()
-                                        .into_iter()
-                                        .map(|user| UserSummary::new(user.id(), user.nickname().to_string()))
-                                        .collect()
-                                };
-
-                                if let Err(e) = send_message_async(result, &mut source).await {
-                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                                    return;
-                                };
-                            },
-                            ConsoleAuthRequests::UserHistory(id) => {
-                                let result = {
-                                    let auth_provision = auth.get_provision();
-
-                                    auth_provision.get_user_info(id).map(|user| 
-                                        UserDetails::new(
-                                            user.id(),
-                                            user.nickname().to_string(),
-                                            user.history().to_vec() 
-                                        )
-                                    );
-                                };
-
-                                if let Err(e) = send_message_async(result, &mut source).await {
-                                    log_error!(&logger, "Unable to send ok message back to console connection: '{e}'.");
-                                    return;
-                                }
-                            },
-                            ConsoleAuthRequests::Pending => {
-                                todo!()
-                            },
-                            ConsoleAuthRequests::Revoke(id) => {
-                                todo!("revoke the user with id {id}")
-                            }
-                            ConsoleAuthRequests::Approve(id) => {
-                                todo!("approve the authorization with id {id}")
-                            }
-                        };
+                        if !decode_auth_request(v, &logger, &mut source, &auth).await {
+                            return;
+                        }
                     }
+                       
                 };
             }
         }

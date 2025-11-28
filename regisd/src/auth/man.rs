@@ -1,8 +1,11 @@
 use std::{fmt::Display, net::IpAddr};
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::Arc;
 
+use chrono::Utc;
+use common::jwt::JwtBase;
+use common::msg::PendingUser;
 //use common::msg::PendingUser;
-use common::user::CompleteUserInformation;
+use common::user::{CompleteUserInformation, UserHistoryElement};
 use exdisj::{
     log_error, log_info,
     io::log::{ChanneledLogger, LoggerBase},
@@ -16,15 +19,14 @@ use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard};
-use common::{
-    jwt::JwtContent,
-    user::{UserHistoryElement, CompleteUserInformationMut}
-};
 
 //use super::app::{ApprovalsManager, ApprovalRequestFuture};
 
+use crate::auth::app::{ApprovalRequestFuture, ApprovalsManager};
+use crate::auth::sess::JwtDecodeError;
+
 use super::{
-    sess::{JwtDecodeError, SessionsManager},
+    sess::SessionsManager,
     user_man::UserManager
 };
 
@@ -68,11 +70,60 @@ impl Display for RenewalError {
 }
 impl std::error::Error for RenewalError { }
 
+pub(crate) struct AuthApprovalSession<'a, L: LoggerBase> {
+    inner: &'a mut AuthManagerState<L>
+}
+impl<'a, L: LoggerBase> AuthApprovalSession<'a, L> {
+    fn new(inner: &'a mut AuthManagerState<L>) -> Self {
+        Self {
+            inner
+        }
+    }
+
+    #[inline]
+    pub(crate) fn pending(&self) -> Vec<&PendingUser> {
+        self.inner.app.pending()
+    }
+
+    pub(crate) fn register_request(&mut self, from_ip: IpAddr) -> ApprovalRequestFuture {
+        let request = self.inner.app.register_request(from_ip);
+
+        let future = ApprovalRequestFuture::new(**request);
+        request.with_async(&future);
+
+        future
+    }
+    pub(crate) fn approve_user<R>(&mut self, user_id: u64, nickname: String, rng: &mut R) -> Option<ClientUserInformation>
+    where R: RngCore + CryptoRng {
+        if !self.inner.app.contains_pending(user_id) {
+            return None;
+        }
+
+        let new_user = self.inner.user.create_user(rng, nickname);
+        if self.inner.app.approve_user(user_id, new_user.id()).is_none() {
+            let id = new_user.id();
+            drop(new_user);
+            self.inner.user.delete_user(id);
+            return None;
+        };
+
+        Some(
+            ClientUserInformation::new(
+                new_user.id(),
+                self.inner.sess.make_jwt(new_user.get_jwt_content()).ok()?
+            )
+        )
+    }
+    pub(crate) fn deny(&mut self, user_id: u64) -> bool {
+        self.inner.app.deny_user(user_id)
+    }
+}
+
 #[derive(Debug)]
-struct AuthManagerState<L> where L: LoggerBase {
+pub(crate) struct AuthManagerState<L> where L: LoggerBase {
     sess: SessionsManager<L>,
     user: UserManager<L>,
-    //app: ApprovalsManager
+    app: ApprovalsManager
 }
 impl<L> AuthManagerState<L> where L: LoggerBase {
     async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
@@ -80,7 +131,7 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
         Self {
             sess: SessionsManager::open_or_default(rng, logger.clone()).await,
             user: UserManager::open_or_default(logger).await,
-            //app: ApprovalsManager::default()
+            app: ApprovalsManager::default()
         }
     }
     async fn save(&self) -> Result<(), std::io::Error> {
@@ -88,17 +139,26 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
         self.user.save().await
     }
 
-    fn create_user<R>(&mut self, rng: &mut R, nickname: String) -> Result<ClientUserInformation, jwt::Error>
-        where R: RngCore + CryptoRng {
-            let user = self.user.create_user(rng, nickname);
-            
-            Ok(
-                ClientUserInformation::new(
-                    user.id(),
-                    self.sess.make_jwt(user.get_jwt_content())?
-                )
-            )
+    pub(crate) fn all_users(&self) -> Vec<CompleteUserInformation<'_>> {
+        self.user.iter().collect()
     }
+    #[inline]
+    pub(crate) fn user_info(&self, id: u64) -> Option<CompleteUserInformation<'_>> {
+        self.user.get_user(id)
+    }
+
+    fn create_new_user<R>(&mut self, rng: &mut R, nickname: String) -> Result<ClientUserInformation, jwt::Error> 
+    where R: RngCore + CryptoRng {
+        let user = self.user.create_user(rng, nickname);
+
+        Ok(
+            ClientUserInformation::new(
+                user.id(),
+                self.sess.make_jwt(user.get_jwt_content())?
+            )
+        )
+    }
+    /// If the user is not revoked, renew their JWT token, and return the content of it.
     fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
         if self.user.is_revoked(id) {
             return Err( RenewalError::RevokedUser )
@@ -112,82 +172,64 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
         self.sess.make_jwt(user.get_jwt_content())
             .map_err(RenewalError::JWT)
     }
-    fn is_user_revoked(&self, id: u64) -> bool {
+
+    /// Determines if a user, by ID, is revoked.
+    #[inline]
+    pub(crate) fn is_user_revoked(&self, id: u64) -> bool {
         self.user.is_revoked(id)
     }
-
-    fn decode_jwt(&self, jwt: &str) -> Result<JwtContent, JwtDecodeError> {
-        self.sess.decode_jwt(jwt)
+    #[inline]
+    pub(crate) fn approvals<'a>(&'a mut self) -> AuthApprovalSession<'a, L> {
+        AuthApprovalSession::new(self)
     }
 
-    fn resolve_user_mut(&mut self, jwt: &str) -> Option<CompleteUserInformationMut<'_>> {
-        let jwt = self.decode_jwt(jwt).ok()?;
+    pub(crate) fn sign_user_in(&mut self, jwt: String, ip: IpAddr) -> Result<Option<ClientUserInformation>, JwtDecodeError> {
+        let token = self.sess.decode_jwt(&jwt)?;
+        let mut user = match self.user.get_user_mut(token.id()) {
+            Some(v) => v,
+            None => return Ok( None )
+        };
 
-        self.user.verify_and_fetch_user_mut(&jwt)
-    }
-    fn revoke_user(&mut self, id: u64) {
-        self.user.revoke(id);
-    }
+        user.add_to_history(UserHistoryElement::new(ip, Utc::now()));
 
-    /*
-    fn register_user_request(&mut self, from_ip: IpAddr) -> ApprovalRequestFuture {
-        let request = self.app.register_request(from_ip);
-
-        let future = ApprovalRequestFuture::new(**request);
-        request.with_async(&future);
-
-        future
-    }
-    fn approve_user<R>(&mut self, with_id: u64, nickname: String, rng: &mut R)  where R: RngCore + CryptoRng {
-        
+        Ok(
+            Some(
+                ClientUserInformation::new(
+                    user.id(),
+                    jwt
+                )
+            )
+        )
     }
 
-    
-    fn register_new_user(&mut self, from_ip: IpAddr) {
-        self.app.register_new_user(from_ip)
+    /// Finds a user using a decoded JWT token, and determines if the user is not revoked.
+    fn resolve_user(&self, jwt: &str) -> Option<CompleteUserInformation<'_>> {
+        let jwt = self.sess.decode_jwt(jwt).ok()?;
+
+        self.user.verify_and_fetch_user(&jwt)
     }
-    fn pending_approvals(&self) -> Vec<&PendingUser> {
-        self.app.pending()
-    }
-    fn approve_user<R>(&mut self, with_id: u64, nickname: String, rng: &mut R) -> Result<ClientUserInformation, ApprovalError>
-        where R: RngCore + CryptoRng {
-            let pending = self.app.approve_user(with_id)
-                .ok_or(ApprovalError::UserNotFound(with_id))?;
-            // We have to award it a new name & ID
-            
-            let new_user = 
-    }
-    fn deny_user(&mut self, with_id: u64) -> bool {
-        self.app.deny_user(with_id)
-    } 
-    */
 }
 
-type AuthManState = Arc<RwLock<Option<AuthManagerState<ChanneledLogger>>>>;
+type AuthManState = Arc<Mutex<Option<AuthManagerState<ChanneledLogger>>>>;
 
 pub struct AuthProvision<'a, L> where L: LoggerBase {
-    inner: RwLockReadGuard<'a, Option<AuthManagerState<L>>>
+    inner: MutexGuard<'a, Option<AuthManagerState<L>>>
 }
 impl<'a, L> AsRef<AuthManagerState<L>> for AuthProvision<'a, L> where L: LoggerBase {
     fn as_ref(&self) -> &AuthManagerState<L> {
         self.inner.as_ref().unwrap()
     }
 }
+impl<'a, L> AsMut<AuthManagerState<L>> for AuthProvision<'a, L> where L: LoggerBase {
+    fn as_mut(&mut self) -> &mut AuthManagerState<L> {
+        self.inner.as_mut().unwrap()
+    }
+}
 impl<'a, L> AuthProvision<'a, L> where L: LoggerBase {
-    fn new(inner: RwLockReadGuard<'a, Option<AuthManagerState<L>>>) -> Self {
+    fn new(inner: MutexGuard<'a, Option<AuthManagerState<L>>>) -> Self {
         Self {
             inner
         }
-    }
-
-    pub fn get_all_users(&'a self) -> Vec<CompleteUserInformation<'a>> {
-        let inner = self.as_ref();
-        inner.user.iter().collect()
-    }
-
-    pub fn get_user_info(&'a self, id: u64) -> Option<CompleteUserInformation<'a>> {
-        let inner = self.as_ref();
-        inner.user.get_user(id)
     }
 }
 
@@ -206,7 +248,7 @@ impl AuthManager {
         Self {
             rsa: Arc::new(RsaHandler::new(&mut rng).expect("unable to create an RSA key")),
             rng: Arc::new(Mutex::new(rng)),
-            state: Arc::new(RwLock::new(None)),
+            state: Arc::new(Mutex::new(None)),
             logger
         }
     }
@@ -224,18 +266,14 @@ impl AuthManager {
     pub async fn initialize(&self) {
         let rng = &mut *self.get_rng().await;
         let core = AuthManagerState::open_or_default(rng, self.logger.clone()).await;
-        let mut guard = match self.state.write() {
-            Ok(g) => g,
-            Err(e) => e.into_inner()
-        };
+        let mut guard = self.state.lock().await;
 
         *guard = Some(core)
     }
 
     #[allow(clippy::await_holding_lock)]
     pub async fn save(&self) -> Result<(), std::io::Error> {
-        let guard = self.state.read()
-            .expect("the inner state for authentication was corrupted");
+        let guard = self.state.lock().await;
 
         let state = (*guard).as_ref().expect("the authentication system is not initialized");
         log_info!(&self.logger, "Saving the auth session.");
@@ -249,57 +287,9 @@ impl AuthManager {
         }
     }
 
-    pub fn get_provision(&self) -> AuthProvision<'_, ChanneledLogger> {
-        let guard = self.state.read()
-            .expect("the inner state for authentication was corrupted");
+    pub async fn get_provision(&self) -> AuthProvision<'_, ChanneledLogger> {
+        let guard = self.state.lock().await;
         AuthProvision::new(guard)
-    }
-
-    #[allow(clippy::await_holding_lock)]
-    pub async fn create_user(&self, nickname: String) -> Result<ClientUserInformation, jwt::Error> {
-        let mut guard = self.state.write()
-            .expect("the inner state for authentication was corrupted");
-
-        let state = (*guard).as_mut().expect("the authentication system is not initialized");
-        state.create_user(&mut *self.get_rng().await, nickname)
-    }
-    pub fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
-        let guard = self.state.read()
-            .expect("the inner state for authentication was corrupted");
-
-        let state = (*guard).as_ref().expect("the authentication system is not initialized");
-        state.renew_user(id)
-    }
-
-    pub fn is_user_revoked(&self, id: u64) -> bool {
-        let guard = self.state.read()
-            .expect("the inner state for authentication was corrupted");
-
-        let state = (*guard).as_ref().expect("the authentication system is not initialized");
-        state.is_user_revoked(id)
-    }
-    pub fn revoke_user(&self, id: u64) {
-        let mut guard = self.state.write()
-            .expect("the inner state for authentication was corrupted");
-
-        let state = (*guard).as_mut().expect("the authentication system is not initialized");
-
-        state.revoke_user(id);
-    }
-    pub fn sign_user_in(&self, jwt: &str, from_ip: IpAddr) -> bool {
-        let mut guard = self.state.write()
-            .expect("the inner state for authentication was corrupted");
-
-        let state = (*guard).as_mut().expect("the authentication system is not initialized");
-
-        let mut user = match state.resolve_user_mut(jwt) {
-            Some(u) => u,
-            None => return false
-        };
-
-        let history = UserHistoryElement::new(from_ip, chrono::Utc::now());
-        user.add_to_history(history);
-        true
     }
 }
 

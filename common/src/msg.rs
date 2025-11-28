@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
-use exdisj::io::metric::PrettyPrinter;
-
-use crate::{config::Configuration, metric::CollectedMetrics, user::UserHistoryElement};
+use crate::{config::Configuration, metric::{CollectedMetrics, CollectedMetricsFormatter}, user::UserHistoryElement};
 
 use std::{fmt::{Debug, Display}, net::IpAddr, ops::Deref};
 
@@ -14,11 +12,7 @@ pub struct ServerStatusResponse {
 }
 impl Display for ServerStatusResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            todo!(), //self.info.pretty_print(0, None)
-        )
+        CollectedMetricsFormatter::new(&self.info).fmt(f)
     }
 }
 
@@ -28,14 +22,14 @@ pub struct MetricsResponse {
 }
 impl Display for MetricsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let each_metric: Vec<String> = self.info.iter()
-        .enumerate()
-            .map(|(i, x)| todo!()) //x.pretty_print(0, Some(i+1)))
-            .collect();
+        for metric in &self.info {
+            let fmt = CollectedMetricsFormatter::new(metric);
 
-        let joined = each_metric.join("\n");
-        
-        write!(f, "{joined}")
+            fmt.fmt(f)?;
+            writeln!(f)?;
+        }
+
+        Ok( () )
     }
 }
 
@@ -135,6 +129,19 @@ impl UserDetails {
     pub fn history(&self) -> &[UserHistoryElement] {
         &self.history
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum SignInMessage {
+    Returning(String),
+    NewUser
+}
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum SignInResponse {
+    Approved,
+    Denied,
+    UserNotFound,
+    ServerError
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
