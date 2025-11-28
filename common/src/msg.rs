@@ -144,13 +144,14 @@ pub enum SignInResponse {
     ServerError
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ConsoleAuthRequests {
-    Pending,         // Response -> Vec<PendingUser>
-    Revoke(u64),     // Response -> bool
-    Approve(u64),    // Response -> bool
-    AllUsers,        // Response -> Vec<UserSummary>
-    UserHistory(u64) // Response -> Vec<UserDetails>
+    Pending,               // Response -> Vec<PendingUser>
+    Revoke(u64),           // Response -> bool
+    Approve(u64, String),  // Response -> Option<ClientUserInformation>,
+    Deny(u64),             // Response -> bool,
+    AllUsers,              // Response -> Vec<UserSummary>
+    UserHistory(u64)       // Response -> Vec<UserDetails>
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ConsoleConfigRequests {
@@ -185,13 +186,13 @@ impl ConsoleRequests {
     pub fn flatten(&self) -> ConsoleFlatRequests {
         match self {
             Self::Shutdown => ConsoleFlatRequests::Shutdown,
-            Self::Auth(v) => ConsoleFlatRequests::Auth(*v),
+            Self::Auth(v) => ConsoleFlatRequests::Auth(v.clone()),
             Self::Config(v) => ConsoleFlatRequests::Config(v.flatten()),
             Self::Poll => ConsoleFlatRequests::Poll
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConsoleFlatRequests {
     Shutdown,                         
     Auth(ConsoleAuthRequests),        

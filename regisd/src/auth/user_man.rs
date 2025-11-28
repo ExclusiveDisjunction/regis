@@ -16,7 +16,7 @@ use common::{
 
 use common::loc::DAEMON_AUTH_USERS_PATH;
 
-pub struct UserManagerIter<'a>(std::collections::hash_map::Iter<'a, u64, UserInformation>);
+pub(crate) struct UserManagerIter<'a>(std::collections::hash_map::Iter<'a, u64, UserInformation>);
 impl<'a> Iterator for UserManagerIter<'a> {
     type Item = CompleteUserInformation<'a>;
 
@@ -30,7 +30,7 @@ impl<'a> Iterator for UserManagerIter<'a> {
     }
 }
 
-pub struct UserManagerIterMut<'a>(std::collections::hash_map::IterMut<'a, u64, UserInformation>);
+pub(crate) struct UserManagerIterMut<'a>(std::collections::hash_map::IterMut<'a, u64, UserInformation>);
 impl<'a> Iterator for UserManagerIterMut<'a> {
     type Item = CompleteUserInformationMut<'a>;
 
@@ -44,7 +44,7 @@ impl<'a> Iterator for UserManagerIterMut<'a> {
     }
 }
 
-pub struct UserManagerRevokedIter<'a> {
+pub(crate) struct UserManagerRevokedIter<'a> {
     store: &'a HashMap<u64, UserInformation>,
     inner: std::collections::hash_set::Iter<'a, u64>
 }
@@ -137,7 +137,7 @@ impl<'de> Visitor<'de> for UserManagerVisitor {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
-pub struct UserManager<L> where L: LoggerBase {
+pub(super) struct UserManager<L> where L: LoggerBase {
     users: HashMap<u64, UserInformation>,
     revoked: HashSet<u64>,
     #[serde(skip)]
@@ -165,7 +165,7 @@ impl Default for UserManager<()> {
     }
 }
 impl<L> UserManager<L> where L: LoggerBase {
-    pub fn change_logger<L2>(self, new: L2) -> UserManager<L2> where L2: LoggerBase {
+    pub(super) fn change_logger<L2>(self, new: L2) -> UserManager<L2> where L2: LoggerBase {
         UserManager {
             users: self.users,
             revoked: self.revoked,
@@ -174,7 +174,7 @@ impl<L> UserManager<L> where L: LoggerBase {
         }
     }
     
-    pub async fn open(logger: L) -> Result<Self, IOError> {
+    pub(super) async fn open(logger: L) -> Result<Self, IOError> {
         let mut file = match File::open(DAEMON_AUTH_USERS_PATH).await {
             Ok(v) => v,
             Err(e) => {
@@ -185,7 +185,7 @@ impl<L> UserManager<L> where L: LoggerBase {
 
         Self::open_from(&mut file, logger).await
     }
-    pub async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
+    pub(super) async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
         let mut bytes: Vec<u8> = vec![];
         if let Err(e) = stream.read_to_end(&mut bytes).await {
             log_error!(&logger, "Unable to read file contents from the stream '{:?}'", &e);
@@ -202,7 +202,7 @@ impl<L> UserManager<L> where L: LoggerBase {
 
         Ok( as_json.change_logger(logger) )
     }
-    pub async fn open_or_default(logger: L) -> Self {
+    pub(super) async fn open_or_default(logger: L) -> Self {
         match Self::open(logger.clone()).await.ok() {
             Some(v) => v,
             None => {
@@ -212,11 +212,11 @@ impl<L> UserManager<L> where L: LoggerBase {
         }
     }
 
-    pub async fn save(&self) -> Result<(), std::io::Error> {
+    pub(super) async fn save(&self) -> Result<(), std::io::Error> {
         let mut file = File::create(DAEMON_AUTH_USERS_PATH).await?;
         self.save_to(&mut file).await
     }
-    pub async fn save_to<S>(&self, stream: &mut S) -> Result<(), IOError> where S: AsyncWriteExt + Unpin {
+    pub(super) async fn save_to<S>(&self, stream: &mut S) -> Result<(), IOError> where S: AsyncWriteExt + Unpin {
         let as_json = serde_json::to_string(&self).map_err(|x| IOError::new(ErrorKind::InvalidData, x))?;
 
         stream.write_all(as_json.as_bytes()).await?;
@@ -224,7 +224,7 @@ impl<L> UserManager<L> where L: LoggerBase {
         Ok( () )
     }
 
-    pub fn create_user<R>(&mut self, rng: &mut R, nickname: String) -> CompleteUserInformationMut<'_> 
+    pub(super) fn create_user<R>(&mut self, rng: &mut R, nickname: String) -> CompleteUserInformationMut<'_> 
         where R: RngCore {
         let new_id = self.curr_id + 1;
         self.curr_id += 1;
@@ -240,29 +240,29 @@ impl<L> UserManager<L> where L: LoggerBase {
         #[allow(deprecated)]
         target.complete_mut(new_id)
     }
-    pub fn delete_user(&mut self, id: u64) -> Option<UserInformation> {
+    pub(super) fn delete_user(&mut self, id: u64) -> Option<UserInformation> {
         self.users.remove(&id)
     }
-    pub fn revoke(&mut self, user: u64) {
+    pub(super) fn revoke(&mut self, user: u64) -> bool {
         log_info!(&self.logger, "Revoking user with id '{user}'");
-        self.revoked.insert(user);
+        self.revoked.insert(user)
     } 
-    pub fn is_revoked(&self, user: u64) -> bool {
+    pub(super) fn is_revoked(&self, user: u64) -> bool {
         self.revoked.contains(&user)
     }
 
-    pub fn get_user(&self, id: u64) -> Option<CompleteUserInformation<'_>> {
+    pub(super) fn get_user(&self, id: u64) -> Option<CompleteUserInformation<'_>> {
         let target = self.users.get(&id)?;
         #[allow(deprecated)]
         Some( target.complete(id) )
     }
-    pub fn get_user_mut(&mut self, id: u64) -> Option<CompleteUserInformationMut<'_>> {
+    pub(super) fn get_user_mut(&mut self, id: u64) -> Option<CompleteUserInformationMut<'_>> {
         let target = self.users.get_mut(&id)?;
         #[allow(deprecated)]
         Some( target.complete_mut(id) )
     }
     
-    pub fn verify_user<T>(&self, jwt: &T) -> bool where T: JwtBase {
+    pub(super) fn verify_user<T>(&self, jwt: &T) -> bool where T: JwtBase {
         match self.users.get(&jwt.id()) {
             Some(info) => {
                 if self.is_revoked(jwt.id()) {
@@ -275,7 +275,7 @@ impl<L> UserManager<L> where L: LoggerBase {
             None => false
         }
     }
-    pub fn verify_and_fetch_user<T>(&self, jwt: &T) -> Option<CompleteUserInformation<'_>> 
+    pub(super) fn verify_and_fetch_user<T>(&self, jwt: &T) -> Option<CompleteUserInformation<'_>> 
         where T: JwtBase {
             if self.is_revoked(jwt.id()) {
                 return None
@@ -291,7 +291,7 @@ impl<L> UserManager<L> where L: LoggerBase {
                 Some( info.complete(jwt.id()) )
             }
     }
-    pub fn verify_and_fetch_user_mut<T>(&mut self, jwt: &T) -> Option<CompleteUserInformationMut<'_>> 
+    pub(super) fn verify_and_fetch_user_mut<T>(&mut self, jwt: &T) -> Option<CompleteUserInformationMut<'_>> 
         where T: JwtBase {
             if self.is_revoked(jwt.id()) {
                 return None
@@ -308,13 +308,13 @@ impl<L> UserManager<L> where L: LoggerBase {
             }
     }
 
-    pub fn iter<'a>(&'a self) -> UserManagerIter<'a> {
+    pub(super) fn iter<'a>(&'a self) -> UserManagerIter<'a> {
         UserManagerIter(self.users.iter())
     }
-    pub fn iter_mut<'a>(&'a mut self) -> UserManagerIterMut<'a> {
+    pub(super) fn iter_mut<'a>(&'a mut self) -> UserManagerIterMut<'a> {
         UserManagerIterMut(self.users.iter_mut())
     }
-    pub fn revoked_iter<'a>(&'a self) -> UserManagerRevokedIter<'a> {
+    pub(super) fn revoked_iter<'a>(&'a self) -> UserManagerRevokedIter<'a> {
         UserManagerRevokedIter {
             inner: self.revoked.iter(),
             store: &self.users

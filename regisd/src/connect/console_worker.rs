@@ -34,9 +34,9 @@ async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, s
         },
         ConsoleAuthRequests::UserHistory(id) => {
             let result = {
-                let auth_provision = auth.get_provision();
+                let auth_provision = auth.get_provision().await;
 
-                auth_provision.await.as_ref().user_info(id).map(|user| 
+                auth_provision.as_ref().user_info(id).map(|user| 
                     UserDetails::new(
                         user.id(),
                         user.nickname().to_string(),
@@ -52,9 +52,9 @@ async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, s
         },
         ConsoleAuthRequests::Pending => {
             let result: Vec<_> = {
-                let auth_provision = auth.get_provision();
+                let mut auth_provision = auth.get_provision().await;
 
-                auth_provision.await.as_mut().approvals().pending()
+                auth_provision.as_mut().approvals().pending()
                     .into_iter()
                     .cloned()
                     .collect()
@@ -66,10 +66,41 @@ async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, s
             }
         },
         ConsoleAuthRequests::Revoke(id) => {
-            todo!("revoke the user with id {id}")
+            let result = {
+                let mut provision = auth.get_provision().await;
+
+                provision.as_mut().revoke_user(id)
+            };
+
+            if let Err(e) = send_message_async(result, source).await {
+                log_error!(logger, "Unable to send message back to console connection: '{e}'.");
+                return false;
+            }
         }
-        ConsoleAuthRequests::Approve(id) => {
-            todo!("approve the authorization with id {id}")
+        ConsoleAuthRequests::Approve(id, name) => {
+            let result = {
+                let mut provision = auth.get_provision().await;
+                let mut rng = auth.get_rng().await;
+
+                provision.as_mut().approvals().approve_user(id, name, &mut *rng)
+            };
+
+            if let Err(e) = send_message_async(result, source).await {
+                log_error!(logger, "Unable to send message back to console connection: '{e}'.");
+                return false;
+            }
+        },
+        ConsoleAuthRequests::Deny(id) => {
+            let result = {
+                let mut provision = auth.get_provision().await;
+
+                provision.as_mut().approvals().deny(id)
+            };
+
+            if let Err(e) = send_message_async(result, source).await {
+                log_error!(logger, "Unable to send message back to console connection: '{e}'.");
+                return false;
+            }
         }
     };
 

@@ -79,24 +79,17 @@ impl ApprovalRequest {
 }
 
 pub struct ApprovalRequestFuture {
-    user: PendingUser,
     core: Arc<RwLock<ApprovalRequestCore>>
 }
 impl ApprovalRequestFuture {
-    pub(super) fn new(user: PendingUser) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            user,
             core: Arc::new(
                 RwLock::new(
                     ApprovalRequestCore::new(None)
                 )
             )
         }
-    }
-
-    pub(super) fn with_waker(&mut self, waker: Waker) {
-        let mut guard = self.core.blocking_write();
-        guard.waker = Some(waker)
     }
 }
 impl std::future::Future for ApprovalRequestFuture {

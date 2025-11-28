@@ -283,18 +283,20 @@ where R: CryptoRng + RngCore {
 
 async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, stream: TcpStream, ip: IpAddr) {
     let auth = AUTH.get().unwrap();
-    let rng = &mut *auth.get_rng().await;
+    let mut aes_stream;
+    {
+        let mut rng_guard = auth.get_rng().await;
+        aes_stream = match setup_handshake(&logger, stream, auth, &mut *rng_guard).await {
+            Some(v) => v,
+            None => return
+        };
 
-    let mut aes_stream = match setup_handshake(&logger, stream, auth, rng).await {
-        Some(v) => v,
-        None => return
-    };
-
-    let status: ClientUserInformation = match determine_user_sign_in(&logger, &mut aes_stream, auth, rng, ip).await {
-        Some(v) => v,
-        None => return
-    };
-    log_info!(&logger, "Signed In as user ID {}", status.id());
+        let status: ClientUserInformation = match determine_user_sign_in(&logger, &mut aes_stream, auth, &mut *rng_guard, ip).await {
+            Some(v) => v,
+            None => return
+        };
+        log_info!(&logger, "Signed In as user ID {}", status.id());
+    }
 
     loop {
         select! {
@@ -337,7 +339,8 @@ async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, stream:
                 };
     
                 log_debug!(&logger, "Sending response message...");
-                if let Err(e) = aes_stream.send_serialize_async(&response, rng).await {
+                let mut rng_guard = auth.get_rng().await;
+                if let Err(e) = aes_stream.send_serialize_async(&response, &mut *rng_guard).await {
                     log_error!(&logger, "Unable to send message to client '{e}'.");
                     return;
                 }

@@ -5,7 +5,7 @@ use chrono::Utc;
 use common::jwt::JwtBase;
 use common::msg::PendingUser;
 //use common::msg::PendingUser;
-use common::user::{CompleteUserInformation, UserHistoryElement};
+use common::user::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement};
 use exdisj::{
     log_error, log_info,
     io::log::{ChanneledLogger, LoggerBase},
@@ -88,7 +88,7 @@ impl<'a, L: LoggerBase> AuthApprovalSession<'a, L> {
     pub(crate) fn register_request(&mut self, from_ip: IpAddr) -> ApprovalRequestFuture {
         let request = self.inner.app.register_request(from_ip);
 
-        let future = ApprovalRequestFuture::new(**request);
+        let future = ApprovalRequestFuture::new();
         request.with_async(&future);
 
         future
@@ -159,7 +159,7 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
         )
     }
     /// If the user is not revoked, renew their JWT token, and return the content of it.
-    fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
+    pub(crate) fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
         if self.user.is_revoked(id) {
             return Err( RenewalError::RevokedUser )
         }
@@ -171,6 +171,9 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
 
         self.sess.make_jwt(user.get_jwt_content())
             .map_err(RenewalError::JWT)
+    }
+    pub(crate) fn revoke_user(&mut self, id: u64) -> bool {
+        self.user.revoke(id)
     }
 
     /// Determines if a user, by ID, is revoked.
@@ -184,8 +187,7 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
     }
 
     pub(crate) fn sign_user_in(&mut self, jwt: String, ip: IpAddr) -> Result<Option<ClientUserInformation>, JwtDecodeError> {
-        let token = self.sess.decode_jwt(&jwt)?;
-        let mut user = match self.user.get_user_mut(token.id()) {
+        let mut user = match self.resolve_user(&jwt) {
             Some(v) => v,
             None => return Ok( None )
         };
@@ -203,10 +205,10 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
     }
 
     /// Finds a user using a decoded JWT token, and determines if the user is not revoked.
-    fn resolve_user(&self, jwt: &str) -> Option<CompleteUserInformation<'_>> {
+    fn resolve_user(&mut self, jwt: &str) -> Option<CompleteUserInformationMut<'_>> {
         let jwt = self.sess.decode_jwt(jwt).ok()?;
 
-        self.user.verify_and_fetch_user(&jwt)
+        self.user.verify_and_fetch_user_mut(&jwt)
     }
 }
 
