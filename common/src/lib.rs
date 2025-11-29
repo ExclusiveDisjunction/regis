@@ -1,8 +1,7 @@
 pub mod loc;
 pub mod msg;
 pub mod metric;
-pub mod jwt;
-pub mod user_serde;
-pub mod user;
-pub mod auth;
+pub mod usr;
 pub mod config;
+pub mod err;
+pub mod regisc;

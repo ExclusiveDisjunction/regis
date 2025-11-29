@@ -16,8 +16,7 @@ use jwt::{SignWithKey as _, VerifyWithKey as _};
 
 use common::{
     loc::DAEMON_AUTH_KEY_PATH,
-    jwt::{JwtContent, JwtRawContent},
-    user::AuthKey
+    usr::{JwtContent, JwtRawContent, AuthKey}
 };
 
 #[derive(Debug)]

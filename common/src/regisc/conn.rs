@@ -3,8 +3,7 @@ use std::io::Error as IOError;
 use serde::de::DeserializeOwned;
 use tokio::net::UnixStream;
 
-use common::loc::COMM_PATH;
-use common::msg::ConsoleRequests;
+use crate::{loc::COMM_PATH, msg::ConsoleRequests};
 use exdisj::io::{msg::{decode_message_async, send_message_async, DecodeError, SendError}, net::receive_buffer_async};
 
 #[derive(Debug)]

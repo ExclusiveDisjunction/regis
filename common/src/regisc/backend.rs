@@ -1,13 +1,13 @@
 use std::fmt::Display;
 
-use common::{config::Configuration, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests}};
+use crate::{config::DaemonConfig, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests}};
 use exdisj::{
     log_debug, log_info, log_error, log_warning,
     io::log::ChanneledLogger,
     task::{ChildComm, TaskOnce, TaskMessage, ShutdownError}
 };
 
-use crate::core::conn::{Connection, ConnectionError};
+use super::conn::{Connection, ConnectionError};
 
 #[derive(Clone, Debug)]
 pub enum BackendRequests {
@@ -16,7 +16,7 @@ pub enum BackendRequests {
     Auth(ConsoleAuthRequests),
     ReloadConfig,
     GetConfig,
-    UpdateConfig(Configuration)
+    UpdateConfig(DaemonConfig)
 }
 
 #[derive(Clone, Debug)]

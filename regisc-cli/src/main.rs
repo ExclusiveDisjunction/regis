@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
 
-use common::config::Configuration;
+use common::config::ClientConfig;
 use common::loc::CLIENTS_PORT;
 use common::msg::{ConsoleAuthRequests, PendingUser, UserDetails, UserSummary};
 use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
@@ -255,7 +255,7 @@ pub async fn update_config<L: LoggerBase>(logger: &L, backend: &mut Backend, std
             return;
         }
     };
-    let mut configuration: Configuration = match serde_json::from_slice(&raw_bytes) {
+    let mut configuration: ClientConfig = match serde_json::from_slice(&raw_bytes) {
         Ok(v) => v,
         Err(e) => {
             log_error!(logger, "Unable to decode the previous configuration. '{e:?}'");
@@ -395,7 +395,7 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
                                     log_debug!(&logger, "As string: {}", &as_string);
                                 }
 
-                                let config_values: Option<Configuration> = match serde_json::from_slice(&message) {
+                                let config_values: Option<ClientConfig> = match serde_json::from_slice(&message) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         log_error!(&logger, "Unable to decode the server's configurations. (error '{e:?}'");

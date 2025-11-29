@@ -10,7 +10,7 @@ use exdisj::{
     }, log_debug, log_error, task::{ChildComm, TaskMessage}
 };
 use common::{
-    config::Configuration, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleFlatRequests, ConsoleRequests, UserDetails, UserSummary}
+    config::ClientConfig, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleFlatRequests, ConsoleRequests, UserDetails, UserSummary}
 };
 
 use crate::{auth::man::{AUTH, AuthManager}, config::CONFIG, msg::ConsoleComm};
@@ -165,7 +165,7 @@ pub(crate) async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<
                                 }
                                 Err(e) => {
                                     log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
-                                    serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
+                                    serde_json::to_vec::<Option<&ClientConfig>>(&None).expect("unable to serialize none???")
                                 }
                             }
                         };
@@ -212,10 +212,10 @@ fn config_get_test() {
         }
         Err(e) => {
             log_error!(&logger, "Unable to serialize the value (error: '{e:?}', returning None.");
-            serde_json::to_vec::<Option<&Configuration>>(&None).expect("unable to serialize none???")
+            serde_json::to_vec::<Option<&ClientConfig>>(&None).expect("unable to serialize none???")
         }
     };
 
-    let deserialized: Option<Configuration> = serde_json::from_slice(&serialized).unwrap();
+    let deserialized: Option<ClientConfig> = serde_json::from_slice(&serialized).unwrap();
     assert!(deserialized.is_some());
 }

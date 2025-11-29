@@ -9,9 +9,8 @@ use exdisj::{
     log_info, log_error, 
     io::log::LoggerBase
 };
-use common::{
-    jwt::JwtBase,
-    user::{CompleteUserInformationMut, UserInformation, CompleteUserInformation}
+use common::usr::{
+    JwtBase, CompleteUserInformationMut, UserInformation, CompleteUserInformation
 };
 
 use common::loc::DAEMON_AUTH_USERS_PATH;
@@ -325,7 +324,7 @@ impl<L> UserManager<L> where L: LoggerBase {
 #[tokio::test]
 async fn test_user_man() {
     use tokio::io::AsyncSeekExt;
-    use common::jwt::JwtContent;
+    use common::usr::jwt::JwtContent;
 
     let mut user_man = UserManager::default();
     let mut rng = rand::thread_rng();

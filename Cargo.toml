@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "common",
+    "regisd",
+    "regisc-cli",
+    "regis-cli"
+    # "regis-gui",
+    # "regisc-gui"
+]
+resolver = "3"

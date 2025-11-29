@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
-use crate::{config::Configuration, metric::{CollectedMetrics, CollectedMetricsFormatter}, user::UserHistoryElement};
+use crate::{config::DaemonConfig, metric::{CollectedMetrics, CollectedMetricsFormatter}, usr::UserHistoryElement};
 
 use std::{fmt::{Debug, Display}, net::IpAddr, ops::Deref};
 
@@ -156,8 +156,8 @@ pub enum ConsoleAuthRequests {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ConsoleConfigRequests {
     Reload,               // Response -> ()
-    Get,                  // Response -> Config
-    Set(Configuration)    // Response -> bool
+    Get,                  // Response -> DaemonConfig
+    Set(DaemonConfig)     // Response -> bool
 }
 impl ConsoleConfigRequests {
     pub fn flatten(&self) -> ConsoleConfigFlatRequests {

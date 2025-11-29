@@ -1,18 +1,10 @@
 [package]
-name = "regis"
+name = "regis-gui"
 version = "0.1.0"
 edition = "2021"
 
-[workspace]
-members = [
-    "regis-core",
-    "regis-cli",
-    "regis-gui"
-]
-resolver = "3"
-
 [[bin]]
-name = "regis"
+name = "regis-gui"
 path = "src/main.rs"
 
 [dependencies]

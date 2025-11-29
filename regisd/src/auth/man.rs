@@ -2,10 +2,9 @@ use std::{fmt::Display, net::IpAddr};
 use std::sync::Arc;
 
 use chrono::Utc;
-use common::jwt::JwtBase;
 use common::msg::PendingUser;
 //use common::msg::PendingUser;
-use common::user::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement};
+use common::usr::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement};
 use exdisj::{
     log_error, log_info,
     io::log::{ChanneledLogger, LoggerBase},
