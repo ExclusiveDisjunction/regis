@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::{
     select,
     signal::unix::{signal, Signal, SignalKind},
@@ -26,7 +28,7 @@ use crate::{
 use common::loc::DAEMON_CONFIG_PATH;
 
 use exdisj::{
-    io::{lock::OptionRwProvider, log::{ChanneledLogger, ConsoleColor, Logger, Prefix}}, log_critical, log_debug, log_error, log_info, task::{RestartError, ShutdownError, Task}
+    io::{lock::OptionRwProvider, log::{Logger, ConstructableLogger}}, log_critical, log_debug, log_error, log_info, task::{RestartError, ShutdownError, Task}
 };
 
 /// The amount of time between each task "poll".
@@ -34,11 +36,11 @@ pub const TASK_CHECK_TIMEOUT: u64 = 30;
 /// The buffer size for a default channel buffer.
 pub const TASKS_DEFAULT_BUFFER: usize = 10;
 
-pub const ORCH_PREFIX: Prefix = Prefix::new_const("Orch", ConsoleColor::Blue);
-pub const CONS_PREFIX: Prefix = Prefix::new_const("Console", ConsoleColor::Cyan);
-pub const CLNT_PREFIX: Prefix = Prefix::new_const("Client", ConsoleColor::Magenta);
-pub const METR_PREFIX: Prefix = Prefix::new_const("Metric", ConsoleColor::Green);
-pub const AUTH_PREFIX: Prefix = Prefix::new_const("Auth", ConsoleColor::Red);
+pub const ORCH_PREFIX: &str = "Orch";
+pub const CONS_PREFIX: &str = "Console";
+pub const CLNT_PREFIX: &str = "Client";
+pub const METR_PREFIX: &str = "Metric";
+pub const AUTH_PREFIX: &str = "Auth";
 
 struct SignalBundle {
     term: Signal,
@@ -46,55 +48,60 @@ struct SignalBundle {
     hup: Signal
 }
 
-pub struct Orchestrator {
-    client: Task<ChanneledLogger, SimpleComm, WorkerTaskResult>,
-    metric: Task<ChanneledLogger, SimpleComm, WorkerTaskResult>,
-    console: Task<ChanneledLogger, ConsoleComm, WorkerTaskResult>,
+pub struct Orchestrator<L> where L: ConstructableLogger {
+    client: Task<L, SimpleComm, WorkerTaskResult>,
+    metric: Task<L, SimpleComm, WorkerTaskResult>,
+    console: Task<L, ConsoleComm, WorkerTaskResult>,
 
     options: Options,
-    log: ChanneledLogger
+    log: L
 }
-impl Orchestrator {
-    pub async fn initialize(log: &Logger, options: setup::Options) -> Self {
-        let my_log = log.make_channel(ORCH_PREFIX.clone());
-        let auth_log = log.make_channel(AUTH_PREFIX.clone());
+impl<L> Orchestrator<L> where L: ConstructableLogger + 'static {
+    pub async fn initialize(log: &L, options: setup::Options) -> Result<Self, L::Err> {
+        let my_log = log.make_channel(ORCH_PREFIX.into())?;
+        let auth_log: Arc<dyn Logger + 'static> = Arc::new( log.make_channel(AUTH_PREFIX.into())? );
 
         let auth = AuthManager::new(auth_log).await;
         auth.initialize().await;
-        AUTH.set(auth).expect("Duplicated authentication manager!");
+        if let Err(_) = AUTH.set(auth) {
+            panic!("Duplicated authentication manager!");
+        }
 
         let mut client = Task::new(
+            CLNT_PREFIX,
             client_entry, 
             TASKS_DEFAULT_BUFFER, 
             true,
-            log.make_channel(CLNT_PREFIX.clone())
-        );
+            log        
+        )?;
 
         let mut console = Task::new(
+            CONS_PREFIX,
             console_entry, 
             TASKS_DEFAULT_BUFFER, 
             false,
-            log.make_channel(CONS_PREFIX.clone())
-        );
+            log
+        )?;
 
         let mut metric = Task::new(
+            METR_PREFIX,
             metrics_entry,
             TASKS_DEFAULT_BUFFER, 
             true,
-            log.make_channel(METR_PREFIX.clone())
-        );
+            log
+        )?;
 
         client.with_restarts(5);
         console.with_restarts(5);
         metric.with_restarts(5);
 
-        Self {
+        Ok(Self {
             client,
             console,
             metric,
             options,
             log: my_log
-        }
+        })
     } 
 
     fn get_signals() -> Result<SignalBundle, std::io::Error> {
@@ -125,7 +132,8 @@ impl Orchestrator {
         true
     }
 
-    async fn reload_configuration(&mut self, read_file: bool) -> Result<(), DaemonFailure> {
+    async fn reload_configuration(&mut self, read_file: bool) -> Result<(), DaemonFailure> 
+    where L::Err: std::fmt::Debug {
         if read_file {
             log_debug!(&self.log, "Opening configuration path");
             if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {
@@ -146,7 +154,7 @@ impl Orchestrator {
             log_info!(&self.log, "The configuration reload message will be sent to worker threads.");
         }
     
-        let results: [Option<RestartError>; 3] = [
+        let results: [Option<RestartError<L>>; 3] = [
             self.console.send_or_restart(ConsoleComm::ConfigReload(false), true).await.err(),
             self.metric.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err(),
             self.client.send_or_restart(SimpleComm::ReloadConfiguration, true).await.err()
@@ -154,7 +162,7 @@ impl Orchestrator {
 
         let send_failure = !results.iter().all(|x| {
             if let Some(e) = x.as_ref() {
-                log_critical!(&self.log, "Unable to send out configuration reload message due to error: {}", e);
+                log_critical!(&self.log, "Unable to send out configuration reload message due to error: {e:?}");
                 false
             }
             else {
@@ -174,7 +182,8 @@ impl Orchestrator {
     }
 
     /// Will spawn the needed timing and shutdown tasks, and will conduct polls & restart tasks as needed.
-    pub async fn run(mut self) -> Result<(), DaemonFailure> {
+    pub async fn run(mut self) -> Result<(), DaemonFailure> 
+    where L::Err: std::fmt::Debug {
         // This thread will do polls to determine if threads need to be spanwed.
 
         //This needs a timer thread. At a periodic time, this timer will signal this main thread to send out poll requests. It only works with the unit type. If it receives a message, it will immediatley exit.
@@ -260,14 +269,16 @@ impl Orchestrator {
         }
     }
 
-    fn get_shutdown_msg(x: Result<WorkerTaskResult, ShutdownError>) -> String {
+    fn get_shutdown_msg(x: Result<WorkerTaskResult, ShutdownError<L>>) -> String 
+    where L::Err: std::fmt::Debug {
         match x {
             Ok(v) => v.to_string(),
-            Err(e) => format!("join error: '{e}'"),
+            Err(e) => format!("join error: '{e:?}'"),
         }
     }
 
-    pub async fn shutdown(self) {
+    pub async fn shutdown(self) 
+    where L::Err: std::fmt::Debug {
         let shutdowns = [
             Self::get_shutdown_msg(self.client.shutdown(true).await),
             Self::get_shutdown_msg(self.console.shutdown(true).await),

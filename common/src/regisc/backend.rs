@@ -2,9 +2,7 @@ use std::fmt::Display;
 
 use crate::{config::DaemonConfig, msg::{ConsoleAuthRequests, ConsoleConfigRequests, ConsoleRequests}};
 use exdisj::{
-    log_debug, log_info, log_error, log_warning,
-    io::log::ChanneledLogger,
-    task::{ChildComm, TaskOnce, TaskMessage, ShutdownError}
+    io::log::{ConstructableLogger, Logger}, log_debug, log_error, log_info, log_warning, task::{ChildComm, ShutdownError, TaskMessage, TaskOnce}
 };
 
 use super::conn::{Connection, ConnectionError};
@@ -69,7 +67,8 @@ pub enum BackendOutput {
     CommFailure
 }
 
-pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, stream: &mut Connection) -> Result<Vec<u8>, ConnectionError> {
+pub async fn process_request<L>(msg: BackendRequests, logger: &L, stream: &mut Connection) -> Result<Vec<u8>, ConnectionError> 
+where L: Logger + 'static {
     let request: ConsoleRequests = match msg {
         BackendRequests::Poll => ConsoleRequests::Poll,
         BackendRequests::Shutdown => ConsoleRequests::Shutdown,
@@ -82,7 +81,8 @@ pub async fn process_request(msg: BackendRequests, logger: &ChanneledLogger, str
     stream.send_with_response_bytes(request).await
 }
 
-pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendMessage>, mut stream: Connection) -> BackendOutput {
+pub async fn runtime_entry<L>(logger: L, mut comm: ChildComm<BackendMessage>, mut stream: Connection) -> BackendOutput 
+where L: Logger + 'static {
     log_info!(&logger, "Begining backend tasks.");
 
     let mut result = BackendOutput::Ok;
@@ -125,12 +125,13 @@ pub async fn runtime_entry(logger: ChanneledLogger, mut comm: ChildComm<BackendM
     result
 }
 
-pub struct Backend {
+pub struct Backend<L> {
     task: TaskOnce<BackendMessage, BackendOutput>,
-    logger: ChanneledLogger
+    logger: L
 }
-impl Backend {
-    async fn make_handle(logger: ChanneledLogger) -> Result<TaskOnce<BackendMessage, BackendOutput>, std::io::Error> {
+impl<L> Backend<L> {
+    async fn make_handle(logger: L) -> Result<TaskOnce<BackendMessage, BackendOutput>, std::io::Error> 
+    where L: Logger + 'static {
         let stream = Connection::open().await?;
         let task = TaskOnce::new(
             async move |comm| { 
@@ -143,8 +144,12 @@ impl Backend {
         Ok( task )
     }
 
-    pub async fn spawn(logger: ChanneledLogger) -> Result<Self, std::io::Error> {
-        let their_logger = logger.clone();
+    pub async fn spawn(logger: L) -> Result<Self, std::io::Error> 
+    where L: ConstructableLogger + 'static,
+          L::Err: Send + Sync + std::error::Error + 'static {
+        let their_logger = logger.make_channel("Regisc Backend".into())
+            .map_err(std::io::Error::other)?;
+
         log_info!(&logger, "Attempting to connect to regisd via the socket file.");
         let task = Self::make_handle(their_logger).await?;
 
@@ -170,7 +175,8 @@ impl Backend {
         self.recv().await
     }
 
-    pub async fn shutdown(self, with_timeout: bool) -> Result<BackendOutput, ShutdownError> {
+    pub async fn shutdown(self, with_timeout: bool) -> Result<BackendOutput, ShutdownError<L>>
+    where L: ConstructableLogger + 'static {
         self.task.shutdown(with_timeout, &self.logger).await
     }
 }

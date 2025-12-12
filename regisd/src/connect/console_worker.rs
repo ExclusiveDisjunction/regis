@@ -6,7 +6,7 @@ use tokio::{
 
 use exdisj::{
     io::{
-        lock::OptionRwProvider, log::ChanneledLogger, msg::{decode_message_async, send_message_async}, net::send_buffer_async
+        lock::OptionRwProvider, log::Logger, msg::{decode_message_async, send_message_async}, net::send_buffer_async
     }, log_debug, log_error, task::{ChildComm, TaskMessage}
 };
 use common::{
@@ -15,7 +15,8 @@ use common::{
 
 use crate::{auth::man::{AUTH, AuthManager}, config::CONFIG, msg::ConsoleComm};
 
-async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, source: &mut UnixStream, auth: &AuthManager) -> bool {
+async fn decode_auth_request<L>(v: ConsoleAuthRequests, logger: &impl Logger, source: &mut UnixStream, auth: &AuthManager<L>) -> bool 
+where L: Logger + ?Sized{
      match v {
         ConsoleAuthRequests::AllUsers => {
             let result: Vec<UserSummary> = {
@@ -108,7 +109,7 @@ async fn decode_auth_request(v: ConsoleAuthRequests, logger: &ChanneledLogger, s
 }
 
 /// Represents the actual tasks carried out by connected consoles.
-pub(crate) async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleComm>) {
+pub(crate) async fn console_worker(logger: impl Logger, mut comm: ChildComm<()>, mut source: UnixStream, sender: Sender<ConsoleComm>) {
     let auth = AUTH.get().expect("Auth is not initalized");
 
     loop {
@@ -202,7 +203,7 @@ pub(crate) async fn console_worker(logger: ChanneledLogger, mut comm: ChildComm<
 #[test]
 fn config_get_test() {
     CONFIG.open(common::loc::DAEMON_CONFIG_PATH).expect("Unable to open config.");
-    let logger = ();
+    let logger = exdisj::io::log::NullLogger;
 
     let config = CONFIG.access();
     let serialized = match serde_json::to_vec(&config.access()) {

@@ -1,13 +1,10 @@
 use exdisj::{
-    log_critical, log_info,
     io::log::{
-        Logger,
-        LoggerLevel,
-        LoggerRedirect
-    }
+        ConstructableLogger, LoggerLevel, LoggerRedirectConfiguration, OsLogErr, OsLogger, RedirectedLogger
+    }, log_critical, log_info
 };
 
-use common::loc::{CONSOLE_LOG_DIR, DAEMON_DIR, PID_PATH, STD_ERR_PATH, STD_OUT_PATH, DAEMON_LOG_DIR, TOTAL_DIR, DAEMON_CONFIG_PATH};
+use common::loc::{CONSOLE_LOG_DIR, DAEMON_DIR, PID_PATH, STD_ERR_PATH, STD_OUT_PATH, TOTAL_DIR, DAEMON_CONFIG_PATH};
 
 use crate::orchestra::Orchestrator;
 use crate::config::CONFIG;
@@ -16,7 +13,7 @@ use crate::failure::DaemonFailure;
 use tokio::runtime::Runtime;
 use daemonize::Daemonize;
 
-use std::fs::{self, File};
+use std::{fmt::Debug, fs::{self, File}, io::stdout};
 use std::os::unix::fs::PermissionsExt;
 
 use clap::Parser;
@@ -54,9 +51,12 @@ pub struct Options {
     pub stderr: Option<String>
 }
 
-pub async fn start_orch(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
+pub async fn start_orch<L>(log: &L, options: Options) -> Result<(), DaemonFailure> 
+where L: ConstructableLogger + 'static,
+L::Err: Debug {
     log_info!(log, "Init complete, handling tasks to orchestrator");
-    let orch = Orchestrator::initialize(log, options).await;
+    let orch = Orchestrator::initialize(log, options).await
+        .map_err(|_| DaemonFailure::RuntimeFailure)?;
 
     let result = orch.run().await;
     CONFIG.save(DAEMON_CONFIG_PATH).map_err(|_| DaemonFailure::IOError)?;
@@ -64,7 +64,9 @@ pub async fn start_orch(log: &Logger, options: Options) -> Result<(), DaemonFail
     result
 }
 
-pub fn begin_runtime(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
+pub fn begin_runtime<L>(log: &L, options: Options) -> Result<(), DaemonFailure> 
+where L: ConstructableLogger + 'static,
+L::Err: Debug {
     let rt = match Runtime::new() {
         Ok(v) => v,
         Err(e) => {
@@ -78,41 +80,50 @@ pub fn begin_runtime(log: &Logger, options: Options) -> Result<(), DaemonFailure
     })
 }
 
-pub fn start_logger(options: &Options) -> std::io::Result<Logger> {
+pub fn start_logger(options: &Options) -> Result<RedirectedLogger<OsLogger>, OsLogErr> {
     let level: LoggerLevel;
-    let redirect: LoggerRedirect;
+    let stdout_level: Option<LoggerLevel>;
     if cfg!(debug_assertions) || options.debug {
         level = LoggerLevel::Debug;
-        redirect = LoggerRedirect::new(Some(LoggerLevel::Debug), true);
+        stdout_level = Some(LoggerLevel::Debug);
     }
     else if options.verbose {
         level = LoggerLevel::Info;
-        redirect = LoggerRedirect::new(Some(LoggerLevel::Info), true);
+        stdout_level = Some(LoggerLevel::Info);
     }
     else {
         level = LoggerLevel::Info;
-        redirect = LoggerRedirect::new(Some(LoggerLevel::Warning), true);
+        stdout_level = None;
     }
 
-    let today = chrono::Local::now();
-    let logger_path = format!("{DAEMON_LOG_DIR}{today:?}-run.log");
+    let stdout = if let Some(level) = stdout_level {
+        LoggerRedirectConfiguration::new(stdout(), level, Some(LoggerLevel::Warning))
+    }
+    else {
+        LoggerRedirectConfiguration::new_inactive(stdout())
+    };
+    let stderr = LoggerRedirectConfiguration::default();
 
-    Logger::new(logger_path, level, redirect)
+    let inner_logger = OsLogger::new("com.exdisj.regis.daemon", level, "Main".into(), ())?;
+
+    Ok(
+        RedirectedLogger::new_configured(inner_logger, stdout, stderr)
+    )
 }
 
 pub fn create_paths() -> std::io::Result<()> {
     create_dir_all(TOTAL_DIR)?;
-    create_dir_all(DAEMON_LOG_DIR)?;
     create_dir_all(CONSOLE_LOG_DIR)?;
     create_dir_all(DAEMON_DIR)?;
 
-    fs::set_permissions(DAEMON_LOG_DIR, fs::Permissions::from_mode(0o777))?;
     fs::set_permissions(CONSOLE_LOG_DIR, fs::Permissions::from_mode(0o777))?;
 
     Ok( () )
 }
 
-pub fn run_as_daemon(log: &Logger, options: Options) -> Result<(), DaemonFailure> {
+pub fn run_as_daemon<L>(log: &L, options: Options) -> Result<(), DaemonFailure>
+where L: ConstructableLogger + 'static,
+L::Err: Debug {
     let stdout_path = options.stdout.as_deref().unwrap_or(STD_OUT_PATH);
     let stderr_path = options.stderr.as_deref().unwrap_or(STD_ERR_PATH);
 

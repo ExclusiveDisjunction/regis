@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use exdisj::{
     log_debug, log_error, log_info,
-    io::log::LoggerBase
+    io::log::Logger
 };
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -61,13 +61,13 @@ impl From<base64::DecodeSliceError> for JwtDecodeError {
 }
 
 #[derive(Debug)]
-pub struct SessionsManager<L: LoggerBase> {
+pub struct SessionsManager<L> where L: Logger {
     key: Hmac<Sha256>,
     buffer: AuthKey,
     logger: L
 }
-impl<L> SessionsManager<L> where L: LoggerBase {
-    pub async fn open(logger: L) -> Result<Self, IOError> {
+impl<L> SessionsManager<L> where L: Logger {
+    async fn open_internal(logger: &L) -> Result<(Hmac<Sha256>, AuthKey), IOError> {
         let mut buffer: AuthKey = [0; 32];
         let mut file = match File::open(DAEMON_AUTH_KEY_PATH).await {
             Ok(f) => f,
@@ -82,28 +82,47 @@ impl<L> SessionsManager<L> where L: LoggerBase {
         }
 
         Ok(
+            ( Hmac::new_from_slice(&buffer).expect("the keysize is invalid..."), buffer )
+        )
+    }
+    pub async fn open(logger: L) -> Result<Self, IOError> {
+        let (key, buffer) = Self::open_internal(&logger).await?;
+
+        Ok(
             Self {
-                key: Hmac::new_from_slice(&buffer).expect("the keysize is invalid..."),
+                key,
                 buffer,
                 logger
             }
         )
     }
-    pub fn new<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
+    fn new_internal<R>(rng: &mut R, logger: &L) -> (Hmac<Sha256>, AuthKey)where R: RngCore {
         let mut buffer: AuthKey = [0; 32];
         rng.fill_bytes(&mut buffer);
         log_info!(&logger, "Generating a new JWT session key.");
 
+        ( Hmac::new_from_slice(&buffer).expect("key size is invalid..."), buffer )
+    }
+    pub fn new<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
+        let (key, buffer) = Self::new_internal(rng, &logger);
+
         Self {
-            key: Hmac::new_from_slice(&buffer).expect("key size is invalid..."),
+            key,
             buffer,
             logger
         }
     }
     pub async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
-        Self::open(logger.clone()).await.ok().unwrap_or_else(|| {
-            Self::new(rng, logger)
-        })
+        let (key, buffer) = match Self::open_internal(&logger).await.ok() {
+            Some(v) => v,
+            None => Self::new_internal(rng, &logger)
+        };
+
+        Self {
+            key,
+            buffer,
+            logger
+        }
     }
 
     pub async fn save(&self) -> Result<(), IOError> {
@@ -152,6 +171,7 @@ impl<L> SessionsManager<L> where L: LoggerBase {
 #[tokio::test]
 async fn test_sess_man() {
     use super::user_man::UserManager;
+    use exdisj::io::log::NullLogger;
 
     let mut users = UserManager::default();
     let mut rng = rand::thread_rng();
@@ -161,7 +181,7 @@ async fn test_sess_man() {
         user.get_jwt_content().to_content()
     };
 
-    let sess = SessionsManager::new(&mut rng, ());
+    let sess = SessionsManager::new(&mut rng, NullLogger);
     let jwt = sess.make_jwt(to_store.clone()).expect("Unable to create the JWT");
 
     let decoded = sess.decode_jwt(&jwt).expect("unable to decode the jwt");

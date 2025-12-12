@@ -7,7 +7,7 @@ use io::METRICS;
 
 use exdisj::{log_info, log_debug, log_warning};
 use exdisj::io::lock::OptionRwProvider;
-use exdisj::io::log::ChanneledLogger;
+use exdisj::io::log::Logger;
 use exdisj::task::{ChildComm, TaskMessage};
 use tokio::select;
 use tokio::time::interval;
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use crate::{config::CONFIG, msg::{SimpleComm, WorkerTaskResult}};
 
-pub async fn metrics_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
+pub async fn metrics_entry(logger: impl Logger, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
     let mut freq = match CONFIG.access().access() {
         Some(v) => v.metric_freq,
         None => return WorkerTaskResult::Configuration

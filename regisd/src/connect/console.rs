@@ -10,7 +10,7 @@ use tokio::{
 
 use exdisj::{
     io::{
-        log::{ChanneledLogger, ConsoleColor, Prefix}
+        log::{ConstructableLogger, Logger}
     }, log_debug, log_error, log_info, task::{ChildComm, TaskMessage, TaskOnce}
 };
 use common::{
@@ -21,7 +21,7 @@ use crate::msg::{ConsoleComm, WorkerTaskResult};
 use super::console_worker::console_worker;
 
 /// Sets up, and tests the connection to the UNIX socket used for communication.
-async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, WorkerTaskResult> {
+async fn establish_listener(logger: &impl Logger) -> Result<UnixListener, WorkerTaskResult> {
     match try_exists(COMM_PATH).await {
         Ok(exists) => {
             if exists {
@@ -54,7 +54,7 @@ async fn establish_listener(logger: &ChanneledLogger) -> Result<UnixListener, Wo
     Ok(listener)
 }
 
-pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleComm>) -> WorkerTaskResult {
+pub async fn console_entry(logger: impl ConstructableLogger + 'static, mut comm: ChildComm<ConsoleComm>) -> WorkerTaskResult {
     log_info!(&logger, "Starting listener...");
     let listener = match establish_listener(&logger, ).await {
         Ok(v) => v,
@@ -116,8 +116,13 @@ pub async fn console_entry(logger: ChanneledLogger, mut comm: ChildComm<ConsoleC
 
                 log_info!(&logger, "Accepted connection from '{:?}'", &conn.1);
 
-                let prefix = Prefix::new(format!("Console Worker {}", active.len()), ConsoleColor::Yellow);
-                let their_logger = logger.make_channel(prefix);
+                let their_logger = match logger.make_channel( format!("Console Worker {}", active.len()).into() ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log_error!(&logger, "Unable to create a logger for the console worker: '{e:?}'. Aborting.");
+                        continue;
+                    }
+                };
                 let their_sender = send.clone();
                 active.push(
                     TaskOnce::new(async move |comm| {

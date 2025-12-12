@@ -1,21 +1,56 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
+use std::fs::create_dir_all;
 
-use common::config::ClientConfig;
-use common::loc::CLIENTS_PORT;
-use common::msg::{ConsoleAuthRequests, PendingUser, UserDetails, UserSummary};
-use exdisj::{log_critical, log_debug, log_error, log_info, log_warning};
-use exdisj::io::log::{ChanneledLogger, LoggerBase};
-use tokio::io::{stdout, AsyncWriteExt, Lines, Stdin, Stdout};
+use exdisj::{
+    log_critical, 
+    log_debug,
+    log_error,
+    log_info,
+    log_warning,
+    io::log::{
+        ConsoleColor, 
+        Logger, 
+        LoggerLevel, 
+        LoggerRedirect, 
+        Prefix,
+        ChanneledLogger,
+        LoggerBase
+    }
+};
 use tokio::{
     runtime::Runtime,
-    io::{AsyncBufReadExt as _, BufReader, stdin}
+    io::{
+        stdout,
+        stdin,
+        AsyncBufReadExt as _,
+        BufReader,
+        AsyncWriteExt as _,
+        Lines,
+        Stdin,
+        Stdout
+    }
 };
-use clap::Parser;
-
-use crate::core::backend::{Backend, BackendRequests};
-use crate::core::conn::ConnectionError;
-use crate::core::REGISC_VERSION;
+use common::{
+    loc::{
+        CLIENTS_PORT,
+        CONSOLE_LOG_DIR
+    },
+    config::DaemonConfig,
+    usr::ClientUserInformation,
+    msg::{
+        ConsoleAuthRequests,
+        PendingUser,
+        UserDetails,
+        UserSummary
+    },
+    regisc::{
+        backend::{Backend, BackendRequests},
+        conn::ConnectionError,
+        REGISC_VERSION
+    }
+};
+use clap::{Parser, ValueEnum};
 
 pub fn cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), ExitCode> {
     // The CLI runs entirely in Tokio, so we need to create a runtime and run the entry.
@@ -94,11 +129,11 @@ impl Into<BackendRequests> for ConfigCommands {
     }
 }
 
-#[derive(Debug, Clone, Copy, clap::Subcommand)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum AuthCommands {
     Pending,
     Revoke { id: u64 },
-    Approve { id: u64 },
+    Approve { id: u64, name: String },
     Users,
     History { id: u64 }
 }
@@ -108,7 +143,7 @@ impl Into<ConsoleAuthRequests> for AuthCommands {
             Self::Pending => ConsoleAuthRequests::Pending,
             Self::Users => ConsoleAuthRequests::AllUsers,
             Self::History { id } => ConsoleAuthRequests::UserHistory(id),
-            Self::Approve { id } => ConsoleAuthRequests::Approve(id),
+            Self::Approve { id, name} => ConsoleAuthRequests::Approve(id, name),
             Self::Revoke { id } => ConsoleAuthRequests::Revoke(id)
         }
     }
@@ -131,11 +166,10 @@ pub struct CliParser {
     command: CliCommands
 }
 
-pub fn print_auth_approve_result<L: LoggerBase>(logger: &L, id: u64, message: Option<bool>) {
+pub fn print_auth_approve_result<L: LoggerBase>(logger: &L, name: &str, message: Option<ClientUserInformation>) {
     match message {
-        Some(true) => println!("User with id {id} was approved."),
-        Some(false) => println!("User with id {id} could not be approved (Perhaps it has a different id?)."),
-        None => log_error!(logger, "Unable to decode the approval status for user with id {id}")
+        Some(info) => println!("User with id {} ({name}) was approved.", info.id()),
+        None => log_error!(logger, "The user '{name}' was not approved.")
     }
 }
 pub fn print_revoke_result<L: LoggerBase>(logger: &L, id: u64, message: Option<bool>) {
@@ -188,7 +222,7 @@ pub fn print_pending_users_table(pending_users: Vec<PendingUser>) {
 
 pub fn print_auth_response<L: LoggerBase>(logger: &L, inner: AuthCommands, message: &[u8]) {
     match inner {
-        AuthCommands::Approve { id } => print_auth_approve_result(logger, id, serde_json::from_slice(message).ok()),
+        AuthCommands::Approve { id: _, name } => print_auth_approve_result(logger, &name, serde_json::from_slice(message).ok()),
         AuthCommands::Revoke { id } => print_revoke_result(logger, id, serde_json::from_slice(message).ok()),
         AuthCommands::Pending => print_with_deserialization(logger, message, print_pending_users_table),
         AuthCommands::Users => print_with_deserialization(logger, message, print_all_users_table),
@@ -255,7 +289,7 @@ pub async fn update_config<L: LoggerBase>(logger: &L, backend: &mut Backend, std
             return;
         }
     };
-    let mut configuration: ClientConfig = match serde_json::from_slice(&raw_bytes) {
+    let mut configuration: DaemonConfig = match serde_json::from_slice(&raw_bytes) {
         Ok(v) => v,
         Err(e) => {
             log_error!(logger, "Unable to decode the previous configuration. '{e:?}'");
@@ -349,7 +383,7 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
             None => continue
         };
 
-        let request = match command {
+        let request = match &command {
             CliCommands::Quit => break,
             CliCommands::Clear => {
                 print!("\x1B[2J\x1b[1;1H");
@@ -358,17 +392,17 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
             },
             CliCommands::Poll => BackendRequests::Poll,
             CliCommands::Config(config) => {
-                if config == ConfigCommands::Update {
+                if config == &ConfigCommands::Update {
                     update_config(&logger, &mut backend, &mut stdout, &mut lines).await;
                     continue;
                 }
                 else {
-                    config.into()
+                    (*config).into()
                 }
             },
             CliCommands::Auth(auth) => {
                 BackendRequests::Auth(
-                    auth.into()
+                    auth.clone().into()
                 )
             }
         };
@@ -395,7 +429,7 @@ pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) 
                                     log_debug!(&logger, "As string: {}", &as_string);
                                 }
 
-                                let config_values: Option<ClientConfig> = match serde_json::from_slice(&message) {
+                                let config_values: Option<DaemonConfig> = match serde_json::from_slice(&message) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         log_error!(&logger, "Unable to decode the server's configurations. (error '{e:?}'");
@@ -437,9 +471,9 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use chrono::{Utc,Duration};
-    use common::{msg::{PendingUser, UserDetails, UserSummary}, user::UserHistoryElement};
+    use common::{msg::{PendingUser, UserDetails, UserSummary}, usr::UserHistoryElement};
 
-    use crate::cli::{print_all_users_table, print_pending_users_table, print_user_history_table};
+    use super::*;
 
     #[test]
     fn table_printing() {
@@ -466,4 +500,91 @@ mod tests {
         ];
         print_pending_users_table(pending_users);
     }
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum QuickCommand {
+    /// Instruct the daemon to gracefully shutdown
+    Shutdown,
+    /// Instruct the daemon to reload its configuration file
+    Config,
+    /// Determines if the daemon is running.
+    Poll,
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "regisc", version = "0.2.0", about = "An interface to communicate with the regisd process, if it is running.")]
+struct Options {
+    /// Connects to regisd, sends the specified message, and closes the connection. Cannot be combined with --gui.
+    #[arg(short, long)]
+    quick: Option<QuickCommand>,
+
+    /// When used, regisc will output more log messages. The default is false, and the default level will be warning.
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// When used, regisc will open as a graphical user interface. Cannot be combined with --quick.
+    #[cfg(feature="gui")]
+    #[arg(long)]
+    gui: bool
+}
+
+pub fn main() -> Result<(), ExitCode> {
+    // Parse command
+    let command = Options::parse();
+
+    // Establish logger
+    let level: LoggerLevel;
+    let redirect: LoggerRedirect;
+    if cfg!(debug_assertions) || command.verbose {
+        level = LoggerLevel::Debug;
+        redirect = LoggerRedirect::new(Some(LoggerLevel::Debug), true);
+    }
+    else {
+        level = LoggerLevel::Warning;
+        redirect = LoggerRedirect::default();
+    }
+
+    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR) {
+        eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
+        return Err( ExitCode::FAILURE );
+    }
+
+    let today = chrono::Local::now();
+    let logger_path = format!("{}{:?}-run.log", CONSOLE_LOG_DIR, today);
+
+    let logger = match Logger::new(logger_path, level, redirect)  {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error! Unable to start log (error: '{e}'). Exiting.");
+            return Err( ExitCode::FAILURE );
+        }
+    };
+
+    if let Some(q) = command.quick {
+        log_info!(&logger, "Sending quick command {q:?}");
+
+        
+
+        return Ok( () ); 
+    }
+
+    log_info!(&logger, "Starting runtime");
+    let runtime_channel = logger.make_channel(Prefix::new_const("Runtime", ConsoleColor::Green));
+    let end_channel = logger.make_channel(Prefix::new_const("User", ConsoleColor::Cyan));
+
+    if let Some(quick) = command.quick {
+        panic!("Quick commands are not complete yet. Cannot complete {quick:?} request.");
+    }
+
+    #[cfg(feature="gui")]
+    if command.gui {
+        panic!("the gui section of the program is not ready yet.");
+    }
+
+    // Now we do the CLI entry.
+    cli_entry(end_channel, runtime_channel)?;
+
+    log_info!(&logger, "Regisc complete.");
+    Ok( () )
 }

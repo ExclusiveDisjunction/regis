@@ -2,27 +2,23 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use common::msg::{MetricsResponse, RequestMessages, ResponseMessages, ServerStatusResponse, SignInMessage, SignInResponse};
 use exdisj::{
-    log_debug, log_error, log_info, log_warning,
-    io::{
-        log::{Prefix, ChanneledLogger, ConsoleColor},
-        lock::OptionRwProvider,
-        net::{receive_buffer_async, send_buffer_async}
-    },
-    auth::{AesHandler, AesStream, RsaHandler, RsaStream},
-    task::{ChildComm, TaskMessage, TaskOnce}
+    auth::{AesHandler, AesStream, RsaHandler, RsaStream}, io::{
+        lock::OptionRwProvider, log::{ConstructableLogger, Logger}, net::{receive_buffer_async, send_buffer_async}
+    }, log_debug, log_error, log_info, log_warning, task::{ChildComm, TaskMessage, TaskOnce}
 };
 use rand::{CryptoRng, RngCore};
 use rsa_ext::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 
-use crate::auth::{app::ApprovalStatus, man::{AUTH, AuthManager, ClientUserInformation}};
+use common::usr::ClientUserInformation;
+use crate::auth::{app::ApprovalStatus, man::{AUTH, AuthManager}};
 use crate::config::CONFIG;
 use crate::metric::collect::collect_all_snapshots;
 use crate::metric::io::METRICS;
 use crate::msg::{SimpleComm, WorkerTaskResult};
 
-async fn setup_listener(addr: Ipv4Addr, logger: &ChanneledLogger, port: &mut u16, max_clients: &mut usize, old_listener: Option<&mut TcpListener>) -> Result<Option<TcpListener>, WorkerTaskResult> {
+async fn setup_listener(addr: Ipv4Addr, logger: &impl Logger, port: &mut u16, max_clients: &mut usize, old_listener: Option<&mut TcpListener>) -> Result<Option<TcpListener>, WorkerTaskResult> {
     let old_port = *port;
     (*port, *max_clients) = match CONFIG.access().access() {
         Some(v) => (v.hosts_port, v.max_hosts as usize),
@@ -59,7 +55,7 @@ async fn setup_listener(addr: Ipv4Addr, logger: &ChanneledLogger, port: &mut u16
     }
 }
 
-pub async fn client_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
+pub async fn client_entry<L: ConstructableLogger + 'static>(logger: L, mut recv: ChildComm<SimpleComm>) -> WorkerTaskResult {
     log_info!(&logger, "Starting listener...");
 
     let mut port: u16 = 0;
@@ -95,8 +91,14 @@ pub async fn client_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleCom
                 }
 
                 log_info!(&logger, "Started connection from '{}'", &conn.1);
-                let prefix = Prefix::new(format!("Client Worker {}", active.len()), ConsoleColor::Red);
-                let their_logger = logger.make_channel(prefix);
+                let their_logger = match logger.make_channel( format!("Client Worker {}", active.len()).into() ) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log_error!(&logger, "Unable to make a channel for the client worker: '{e:?}'");
+                        continue;
+                    }
+                };
+
                 active.push(
                     TaskOnce::new(async move |comm| {
                         client_worker(their_logger, comm, conn.0, conn.1.ip()).await 
@@ -169,8 +171,9 @@ pub async fn client_entry(logger: ChanneledLogger, mut recv: ChildComm<SimpleCom
     result_status
 }
 
-async fn setup_handshake<R>(logger: &ChanneledLogger, mut stream: TcpStream, auth: &AuthManager, rng: &mut R) -> Option<AesStream<TcpStream>>
-where R: CryptoRng + RngCore {
+async fn setup_handshake<R, L>(logger: &impl Logger, mut stream: TcpStream, auth: &AuthManager<L>, rng: &mut R) -> Option<AesStream<TcpStream>>
+where R: CryptoRng + RngCore,
+L: Logger + ?Sized {
     // Send the RSA public key.
     let (pub_key, priv_key) = auth.get_rsa().clone().split();
     log_debug!(logger, "Serializing the RSA public key for the client");
@@ -221,8 +224,9 @@ where R: CryptoRng + RngCore {
 
     Some( aes_stream )
 }
-async fn determine_user_sign_in<R>(logger: &ChanneledLogger, aes_stream: &mut AesStream<TcpStream>, auth: &AuthManager, rng: &mut R, ip: IpAddr) -> Option<ClientUserInformation>
-where R: CryptoRng + RngCore {
+async fn determine_user_sign_in<R, L>(logger: &impl Logger, aes_stream: &mut AesStream<TcpStream>, auth: &AuthManager<L>, rng: &mut R, ip: IpAddr) -> Option<ClientUserInformation>
+where R: CryptoRng + RngCore,
+L: Logger + ?Sized {
     let sign_in = match aes_stream.receive_deserialize_async().await {
         Ok(v) => v,
         Err(e) => {
@@ -281,7 +285,7 @@ where R: CryptoRng + RngCore {
     }
 }
 
-async fn client_worker(logger: ChanneledLogger, mut comm: ChildComm<()>, stream: TcpStream, ip: IpAddr) {
+async fn client_worker(logger: impl Logger, mut comm: ChildComm<()>, stream: TcpStream, ip: IpAddr) {
     let auth = AUTH.get().unwrap();
     let mut aes_stream;
     {

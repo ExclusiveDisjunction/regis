@@ -7,9 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use chrono::{DateTime, Utc};
-use common::msg::PendingUser;
-
-use crate::auth::man::ClientUserInformation;
+use common::{usr::ClientUserInformation, msg::PendingUser};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApprovalStatus<V> {

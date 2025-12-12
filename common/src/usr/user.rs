@@ -157,3 +157,24 @@ impl<'a> CompleteUserInformationMut<'a> {
         self.history.push(new);
     }
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub struct ClientUserInformation {
+    id: u64,
+    jwt: String
+}
+impl ClientUserInformation {
+    pub fn new(id: u64, jwt: String) -> Self {
+        Self {
+            id,
+            jwt
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+    pub fn jwt(&self) -> &str {
+        &self.jwt
+    }
+}

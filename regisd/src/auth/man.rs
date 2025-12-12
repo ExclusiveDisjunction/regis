@@ -4,10 +4,10 @@ use std::sync::Arc;
 use chrono::Utc;
 use common::msg::PendingUser;
 //use common::msg::PendingUser;
-use common::usr::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement};
+use common::usr::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement, ClientUserInformation};
 use exdisj::{
     log_error, log_info,
-    io::log::{ChanneledLogger, LoggerBase},
+    io::log::Logger,
     auth::{
         encrypt::RsaHandler,
         stream::RsaStream
@@ -16,7 +16,6 @@ use exdisj::{
 use once_cell::sync::OnceCell;
 use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 use rand_core::RngCore;
-use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard};
 
 //use super::app::{ApprovalsManager, ApprovalRequestFuture};
@@ -28,27 +27,6 @@ use super::{
     sess::SessionsManager,
     user_man::UserManager
 };
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct ClientUserInformation {
-    id: u64,
-    jwt: String
-}
-impl ClientUserInformation {
-    pub fn new(id: u64, jwt: String) -> Self {
-        Self {
-            id,
-            jwt
-        }
-    }
-
-    pub fn id(&self) -> u64 {
-        self.id
-    }
-    pub fn jwt(&self) -> &str {
-        &self.jwt
-    }
-}
 
 #[derive(Debug)]
 pub enum RenewalError {
@@ -69,10 +47,10 @@ impl Display for RenewalError {
 }
 impl std::error::Error for RenewalError { }
 
-pub(crate) struct AuthApprovalSession<'a, L: LoggerBase> {
+pub(crate) struct AuthApprovalSession<'a, L> where L: Logger + ?Sized {
     inner: &'a mut AuthManagerState<L>
 }
-impl<'a, L: LoggerBase> AuthApprovalSession<'a, L> {
+impl<'a, L> AuthApprovalSession<'a, L> where L: Logger + ?Sized {
     fn new(inner: &'a mut AuthManagerState<L>) -> Self {
         Self {
             inner
@@ -119,13 +97,13 @@ impl<'a, L: LoggerBase> AuthApprovalSession<'a, L> {
 }
 
 #[derive(Debug)]
-pub(crate) struct AuthManagerState<L> where L: LoggerBase {
-    sess: SessionsManager<L>,
-    user: UserManager<L>,
+pub(crate) struct AuthManagerState<L> where L: Logger + ?Sized {
+    sess: SessionsManager<Arc<L>>,
+    user: UserManager<Arc<L>>,
     app: ApprovalsManager
 }
-impl<L> AuthManagerState<L> where L: LoggerBase {
-    async fn open_or_default<R>(rng: &mut R, logger: L) -> Self where R: RngCore {
+impl<L> AuthManagerState<L> where L: Logger + ?Sized {
+    async fn open_or_default<R>(rng: &mut R, logger: Arc<L>) -> Self where R: RngCore {
         log_info!(&logger, "Opening the authentication inner state");
         Self {
             sess: SessionsManager::open_or_default(rng, logger.clone()).await,
@@ -211,22 +189,22 @@ impl<L> AuthManagerState<L> where L: LoggerBase {
     }
 }
 
-type AuthManState = Arc<Mutex<Option<AuthManagerState<ChanneledLogger>>>>;
+type AuthManState<L> = Arc<Mutex<Option<AuthManagerState<L>>>>;
 
-pub struct AuthProvision<'a, L> where L: LoggerBase {
+pub struct AuthProvision<'a, L> where L: Logger + ?Sized {
     inner: MutexGuard<'a, Option<AuthManagerState<L>>>
 }
-impl<'a, L> AsRef<AuthManagerState<L>> for AuthProvision<'a, L> where L: LoggerBase {
+impl<'a, L> AsRef<AuthManagerState<L>> for AuthProvision<'a, L> where L: Logger + ?Sized {
     fn as_ref(&self) -> &AuthManagerState<L> {
         self.inner.as_ref().unwrap()
     }
 }
-impl<'a, L> AsMut<AuthManagerState<L>> for AuthProvision<'a, L> where L: LoggerBase {
+impl<'a, L> AsMut<AuthManagerState<L>> for AuthProvision<'a, L> where L: Logger + ?Sized {
     fn as_mut(&mut self) -> &mut AuthManagerState<L> {
         self.inner.as_mut().unwrap()
     }
 }
-impl<'a, L> AuthProvision<'a, L> where L: LoggerBase {
+impl<'a, L> AuthProvision<'a, L> where L: Logger + ?Sized {
     fn new(inner: MutexGuard<'a, Option<AuthManagerState<L>>>) -> Self {
         Self {
             inner
@@ -235,14 +213,14 @@ impl<'a, L> AuthProvision<'a, L> where L: LoggerBase {
 }
 
 #[derive(Debug)]
-pub struct AuthManager {
+pub struct AuthManager<L> where L: Logger + ?Sized {
     rsa: Arc<RsaHandler>,
     rng: Arc<Mutex<StdRng>>,
-    state: AuthManState,
-    logger: ChanneledLogger
+    state: AuthManState<L>,
+    logger: Arc<L>
 }
-impl AuthManager {
-    pub async fn new(logger: ChanneledLogger) -> Self {
+impl<L> AuthManager<L> where L: Logger + ?Sized {
+    pub async fn new(logger: Arc<L>) -> Self {
         log_info!(&logger, "Opening the authentication manager");
 
         let mut rng = StdRng::from_rng(&mut rand::thread_rng()).expect("Unable to create a new stdrng");
@@ -288,22 +266,20 @@ impl AuthManager {
         }
     }
 
-    pub async fn get_provision(&self) -> AuthProvision<'_, ChanneledLogger> {
+    pub async fn get_provision(&self) -> AuthProvision<'_, L> {
         let guard = self.state.lock().await;
         AuthProvision::new(guard)
     }
 }
 
-pub static AUTH: OnceCell<AuthManager> = OnceCell::new();
+pub static AUTH: OnceCell<AuthManager<dyn Logger>> = OnceCell::new();
 
 #[tokio::test]
 async fn test_auth_manager() {
-    use exdisj::io::log::{Logger, Prefix, ConsoleColor, LoggerLevel, LoggerRedirect};
+    use exdisj::io::log::{NullLogger, RedirectedLogger};
 
-    let _ = tokio::fs::remove_file("auth_man.log").await;
-    let logger = Logger::new("auth_man.log", LoggerLevel::Debug, LoggerRedirect::default()).unwrap();
-    let channel  = logger.make_channel(Prefix::new_const("Auth", ConsoleColor::Red));
-    let inner = AuthManager::new(channel).await;
+    let logger: Arc<dyn Logger + 'static> = Arc::new(RedirectedLogger::new_default(NullLogger));
+    let inner = AuthManager::new(logger).await;
 
     let auth = AUTH.get_or_init(|| inner);
     auth.initialize().await;

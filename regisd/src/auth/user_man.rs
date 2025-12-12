@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Error as IOError, ErrorKind};
 
+use exdisj::io::log::NullLogger;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Serialize, Deserialize, de::{self, Visitor, SeqAccess, MapAccess}};
 use rand_core::RngCore;
 use exdisj::{
     log_info, log_error, 
-    io::log::LoggerBase
+    io::log::Logger
 };
 use common::usr::{
     JwtBase, CompleteUserInformationMut, UserInformation, CompleteUserInformation
@@ -69,7 +70,7 @@ enum UserManagerFields {
 
 struct UserManagerVisitor;
 impl<'de> Visitor<'de> for UserManagerVisitor {
-    type Value = UserManager<()>;
+    type Value = UserManager<NullLogger>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("struct UserManager<()>")
@@ -89,7 +90,7 @@ impl<'de> Visitor<'de> for UserManagerVisitor {
                 users,
                 revoked,
                 curr_id: max_id,
-                logger: ()
+                logger: NullLogger
             }
         )
     }
@@ -129,14 +130,14 @@ impl<'de> Visitor<'de> for UserManagerVisitor {
                 users,
                 revoked,
                 curr_id: max_id,
-                logger: ()
+                logger: NullLogger
             }
         )
     }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
-pub(super) struct UserManager<L> where L: LoggerBase {
+pub(super) struct UserManager<L> where L: Logger {
     users: HashMap<u64, UserInformation>,
     revoked: HashSet<u64>,
     #[serde(skip)]
@@ -144,7 +145,7 @@ pub(super) struct UserManager<L> where L: LoggerBase {
     #[serde(skip)]
     logger: L
 }
-impl<'de> Deserialize<'de> for UserManager<()> {
+impl<'de> Deserialize<'de> for UserManager<NullLogger> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: de::Deserializer<'de> {
@@ -153,27 +154,18 @@ impl<'de> Deserialize<'de> for UserManager<()> {
         deserializer.deserialize_struct("UserManager", FIELDS, UserManagerVisitor)
     }
 }
-impl Default for UserManager<()> {
+impl Default for UserManager<NullLogger> {
     fn default() -> Self {
          Self {
             users: HashMap::new(),
             revoked: HashSet::new(),
             curr_id: 0,
-            logger: ()
+            logger: NullLogger
         }
     }
 }
-impl<L> UserManager<L> where L: LoggerBase {
-    pub(super) fn change_logger<L2>(self, new: L2) -> UserManager<L2> where L2: LoggerBase {
-        UserManager {
-            users: self.users,
-            revoked: self.revoked,
-            curr_id: self.curr_id,
-            logger: new
-        }
-    }
-    
-    pub(super) async fn open(logger: L) -> Result<Self, IOError> {
+impl<L> UserManager<L> where L: Logger {
+    async fn open_internal(logger: &impl Logger) -> Result<UserManager<NullLogger>, IOError> {
         let mut file = match File::open(DAEMON_AUTH_USERS_PATH).await {
             Ok(v) => v,
             Err(e) => {
@@ -182,16 +174,16 @@ impl<L> UserManager<L> where L: LoggerBase {
             }
         };
 
-        Self::open_from(&mut file, logger).await
+        Self::open_stream_internal(&mut file, logger).await
     }
-    pub(super) async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
+    async fn open_stream_internal<S>(stream: &mut S, logger: &impl Logger) -> Result<UserManager<NullLogger>, IOError> where S: AsyncReadExt + Unpin {
         let mut bytes: Vec<u8> = vec![];
         if let Err(e) = stream.read_to_end(&mut bytes).await {
             log_error!(&logger, "Unable to read file contents from the stream '{:?}'", &e);
             return Err(e);
         }
 
-        let as_json: UserManager<()> = match serde_json::from_slice(&bytes) {
+        let as_json: UserManager<NullLogger> = match serde_json::from_slice(&bytes) {
             Ok(v) => v,
             Err(e) => {
                 log_error!(&logger, "Unable to decode the binary data into a UserManager instance: '{:?}'", &e);
@@ -199,11 +191,28 @@ impl<L> UserManager<L> where L: LoggerBase {
             }
         };
 
-        Ok( as_json.change_logger(logger) )
+        Ok(as_json)
+    }
+}
+impl<L> UserManager<L> where L: Logger {
+    pub(super) fn change_logger<L2>(self, new: L2) -> UserManager<L2> where L2: Logger {
+        UserManager {
+            users: self.users,
+            revoked: self.revoked,
+            curr_id: self.curr_id,
+            logger: new
+        }
+    }
+
+    pub(super) async fn open(logger: L) -> Result<Self, IOError> {
+        Ok( Self::open_internal(&logger).await?.change_logger(logger) )
+    }
+    pub(super) async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
+        Ok( Self::open_stream_internal(stream, &logger).await?.change_logger(logger) )
     }
     pub(super) async fn open_or_default(logger: L) -> Self {
-        match Self::open(logger.clone()).await.ok() {
-            Some(v) => v,
+        match Self::open_internal(&logger).await.ok() {
+            Some(v) => v.change_logger(logger),
             None => {
                 log_info!(&logger, "Opening as a default user manager.");
                 UserManager::default().change_logger(logger)
@@ -348,7 +357,7 @@ async fn test_user_man() {
 
     stream.rewind().await.expect("could not rewind");
 
-    let new_user_man = UserManager::open_from(&mut stream, ()).await.expect("could not re-open");
+    let new_user_man = UserManager::open_from(&mut stream, NullLogger).await.expect("could not re-open");
 
     assert_eq!(new_user_man, user_man);
 }

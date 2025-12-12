@@ -29,7 +29,7 @@ fn run() -> Result<(), DaemonFailure> {
     let logger = match setup::start_logger(&cli) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Unable to crate a logger: '{e}'");
+            eprintln!("Unable to crate a logger: '{e:?}'");
             return Err( DaemonFailure::LoggerError );
         }
     };
