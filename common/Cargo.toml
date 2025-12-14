@@ -17,3 +17,5 @@ lazy_static = "1.5.0"
 rand_core = "0.6.4"
 rand = "0.8.5"
 rsa_ext = { version = "0.1.2", features = ["serde"] }
+
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service"]}

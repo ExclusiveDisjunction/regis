@@ -5,3 +5,4 @@ pub mod usr;
 pub mod config;
 pub mod err;
 pub mod regisc;
+pub mod client;
