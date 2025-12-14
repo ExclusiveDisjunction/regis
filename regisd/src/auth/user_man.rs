@@ -30,37 +30,6 @@ impl<'a> Iterator for UserManagerIter<'a> {
     }
 }
 
-pub(crate) struct UserManagerIterMut<'a>(std::collections::hash_map::IterMut<'a, u64, UserInformation>);
-impl<'a> Iterator for UserManagerIterMut<'a> {
-    type Item = CompleteUserInformationMut<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let inner = self.0.next()?;
-
-        Some(
-            #[allow(deprecated)]
-            inner.1.complete_mut(*inner.0)
-        )
-    }
-}
-
-pub(crate) struct UserManagerRevokedIter<'a> {
-    store: &'a HashMap<u64, UserInformation>,
-    inner: std::collections::hash_set::Iter<'a, u64>
-}
-impl<'a> Iterator for UserManagerRevokedIter<'a> {
-    type Item = CompleteUserInformation<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_id = self.inner.next()?;
-        let target_user = self.store.get(next_id)?;
-
-        Some(
-            CompleteUserInformation::new(*next_id, target_user.auth_key(), target_user.nickname(), target_user.history())
-        )
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(field_identifier, rename_all = "lowercase")]
 enum UserManagerFields {
@@ -204,9 +173,7 @@ impl<L> UserManager<L> where L: Logger {
         }
     }
 
-    pub(super) async fn open(logger: L) -> Result<Self, IOError> {
-        Ok( Self::open_internal(&logger).await?.change_logger(logger) )
-    }
+    #[cfg(test)]
     pub(super) async fn open_from<S>(stream: &mut S, logger: L) -> Result<Self, IOError> where S: AsyncReadExt + Unpin {
         Ok( Self::open_stream_internal(stream, &logger).await?.change_logger(logger) )
     }
@@ -264,41 +231,13 @@ impl<L> UserManager<L> where L: Logger {
         #[allow(deprecated)]
         Some( target.complete(id) )
     }
+    #[allow(dead_code)] // Might be needed later on
     pub(super) fn get_user_mut(&mut self, id: u64) -> Option<CompleteUserInformationMut<'_>> {
         let target = self.users.get_mut(&id)?;
         #[allow(deprecated)]
         Some( target.complete_mut(id) )
     }
     
-    pub(super) fn verify_user<T>(&self, jwt: &T) -> bool where T: JwtBase {
-        match self.users.get(&jwt.id()) {
-            Some(info) => {
-                if self.is_revoked(jwt.id()) {
-                    log_info!(&self.logger, "A user with id '{}' does exist, but it is revoked.", jwt.id());
-                    return false;
-                }
-
-                info.auth_key() == jwt.key()
-            }
-            None => false
-        }
-    }
-    pub(super) fn verify_and_fetch_user<T>(&self, jwt: &T) -> Option<CompleteUserInformation<'_>> 
-        where T: JwtBase {
-            if self.is_revoked(jwt.id()) {
-                return None
-            }
-
-            let info = self.users.get(&jwt.id())?;
-
-            if info.auth_key() != jwt.key() { 
-                None
-            }
-            else {
-                #[allow(deprecated)]
-                Some( info.complete(jwt.id()) )
-            }
-    }
     pub(super) fn verify_and_fetch_user_mut<T>(&mut self, jwt: &T) -> Option<CompleteUserInformationMut<'_>> 
         where T: JwtBase {
             if self.is_revoked(jwt.id()) {
@@ -319,15 +258,6 @@ impl<L> UserManager<L> where L: Logger {
     pub(super) fn iter<'a>(&'a self) -> UserManagerIter<'a> {
         UserManagerIter(self.users.iter())
     }
-    pub(super) fn iter_mut<'a>(&'a mut self) -> UserManagerIterMut<'a> {
-        UserManagerIterMut(self.users.iter_mut())
-    }
-    pub(super) fn revoked_iter<'a>(&'a self) -> UserManagerRevokedIter<'a> {
-        UserManagerRevokedIter {
-            inner: self.revoked.iter(),
-            store: &self.users
-        }
-    }
 }
 
 #[tokio::test]
@@ -344,11 +274,11 @@ async fn test_user_man() {
         user_one.get_jwt_content().to_content()
     };
 
-    assert!( user_man.verify_user(&key_to_test) ); //Should always work
+    assert!( user_man.verify_and_fetch_user_mut(&key_to_test).is_some() ); //Should always work
 
     user_man.revoke(key_to_test.id());
 
-    assert!( !user_man.verify_user(&key_to_test) ); //Should not pass because it has been revoked
+    assert!( user_man.verify_and_fetch_user_mut(&key_to_test).is_none() ); //Should not pass because it has been revoked
 
     //now we test for saving and whatnot
     let _ = tokio::fs::remove_file("user-man-test.json").await;

@@ -187,5 +187,5 @@ async fn test_sess_man() {
     let decoded = sess.decode_jwt(&jwt).expect("unable to decode the jwt");
     assert_eq!(&to_store, &decoded);
 
-    assert!( users.verify_user(&decoded)) 
+    assert!( users.verify_and_fetch_user_mut(&decoded).is_some() ); 
 }

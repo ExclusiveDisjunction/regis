@@ -5,7 +5,7 @@ use tokio::{
     select,
     net::UnixListener,
     sync::mpsc::channel,
-    fs::{create_dir_all, try_exists, remove_file}
+    fs::{try_exists, remove_file}
 };
 
 use exdisj::{
@@ -14,7 +14,7 @@ use exdisj::{
     }, log_debug, log_error, log_info, task::{ChildComm, TaskMessage, TaskOnce}
 };
 use common::{
-    loc::{COMM_PATH, TOTAL_DIR}
+    loc::COMM_PATH
 };
 
 use crate::msg::{ConsoleComm, WorkerTaskResult};
@@ -34,10 +34,6 @@ async fn establish_listener(logger: &impl Logger) -> Result<UnixListener, Worker
         }
     }
 
-    if create_dir_all(TOTAL_DIR).await.is_err() {
-        return Err(WorkerTaskResult::DoNotReboot);
-    }
-
     let listener = match UnixListener::bind(COMM_PATH) {
         Ok(v) => v,
         Err(e) => {
@@ -45,9 +41,8 @@ async fn establish_listener(logger: &impl Logger) -> Result<UnixListener, Worker
             return Err(WorkerTaskResult::Sockets)
         }
     };
-
-    if let Err(e) = fs::set_permissions(COMM_PATH, fs::Permissions::from_mode(0o777)) {
-        log_error!(logger, "Unable to set permissions for the server communication, '{e}'");
+    if let Err(e) = fs::set_permissions(COMM_PATH, fs::Permissions::from_mode(0o660)) {
+        log_error!(logger, "Unable to set permissions for the server communication: '{e}'");
         return Err(WorkerTaskResult::Sockets);
     }
 

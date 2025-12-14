@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use common::msg::PendingUser;
-//use common::msg::PendingUser;
 use common::usr::{CompleteUserInformation, CompleteUserInformationMut, UserHistoryElement, ClientUserInformation};
 use exdisj::{
     log_error, log_info,
@@ -17,8 +16,6 @@ use once_cell::sync::OnceCell;
 use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 use rand_core::RngCore;
 use tokio::sync::{Mutex, MutexGuard};
-
-//use super::app::{ApprovalsManager, ApprovalRequestFuture};
 
 use crate::auth::app::{ApprovalRequestFuture, ApprovalsManager};
 use crate::auth::sess::JwtDecodeError;
@@ -123,18 +120,7 @@ impl<L> AuthManagerState<L> where L: Logger + ?Sized {
     pub(crate) fn user_info(&self, id: u64) -> Option<CompleteUserInformation<'_>> {
         self.user.get_user(id)
     }
-
-    fn create_new_user<R>(&mut self, rng: &mut R, nickname: String) -> Result<ClientUserInformation, jwt::Error> 
-    where R: RngCore + CryptoRng {
-        let user = self.user.create_user(rng, nickname);
-
-        Ok(
-            ClientUserInformation::new(
-                user.id(),
-                self.sess.make_jwt(user.get_jwt_content())?
-            )
-        )
-    }
+    
     /// If the user is not revoked, renew their JWT token, and return the content of it.
     pub(crate) fn renew_user(&self, id: u64) -> Result<String, RenewalError> {
         if self.user.is_revoked(id) {

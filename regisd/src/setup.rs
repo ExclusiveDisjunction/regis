@@ -4,7 +4,7 @@ use exdisj::{
     }, log_critical, log_info
 };
 
-use common::loc::{CONSOLE_LOG_DIR, DAEMON_DIR, PID_PATH, STD_ERR_PATH, STD_OUT_PATH, TOTAL_DIR, DAEMON_CONFIG_PATH};
+use common::loc::{COMM_DIR, DAEMON_AUTH_DIR, DAEMON_CONFIG_PATH, DAEMON_DIR, PID_PATH, TOTAL_DIR};
 
 use crate::orchestra::Orchestrator;
 use crate::config::CONFIG;
@@ -34,21 +34,9 @@ pub struct Options {
     #[arg(short, long)]
     pub daemon: bool,
 
-    /// Instructs the process to not use authentication and encryption over the TCP channel.
-    #[arg(short, long)]
-    pub no_authentiation: bool,
-
     /// When this is true, if the configuration is invalid, it will reset the configuration and continue on. Otherwise, the program will exit.
     #[arg(long)]
     pub override_config: bool,
-
-    /// The location that standard out should go to. Ignored if not a daemon.
-    #[arg(long, value_name = "FILE")]
-    pub stdout: Option<String>,
-
-    /// The location that standard error should go to. Ignored if not a daemon.
-    #[arg(long, value_name = "FILE")]
-    pub stderr: Option<String>
 }
 
 pub async fn start_orch<L>(log: &L, options: Options) -> Result<(), DaemonFailure> 
@@ -96,6 +84,8 @@ pub fn start_logger(options: &Options) -> Result<RedirectedLogger<OsLogger>, OsL
         stdout_level = None;
     }
 
+    println!("Launching logger with stdout redirect of '{stdout_level:?}'.");
+
     let stdout = if let Some(level) = stdout_level {
         LoggerRedirectConfiguration::new(stdout(), level, Some(LoggerLevel::Warning))
     }
@@ -112,11 +102,19 @@ pub fn start_logger(options: &Options) -> Result<RedirectedLogger<OsLogger>, OsL
 }
 
 pub fn create_paths() -> std::io::Result<()> {
-    create_dir_all(TOTAL_DIR)?;
-    create_dir_all(CONSOLE_LOG_DIR)?;
-    create_dir_all(DAEMON_DIR)?;
+    println!("Making directories");
 
-    fs::set_permissions(CONSOLE_LOG_DIR, fs::Permissions::from_mode(0o777))?;
+    create_dir_all(TOTAL_DIR)?;
+    create_dir_all(DAEMON_DIR)?;
+    create_dir_all(DAEMON_AUTH_DIR)?;
+    create_dir_all(COMM_DIR)?;
+
+    println!("Setting permissions");
+
+    fs::set_permissions(TOTAL_DIR, fs::Permissions::from_mode(0o755))?;
+    fs::set_permissions(DAEMON_DIR, fs::Permissions::from_mode(0o755))?;
+    fs::set_permissions(DAEMON_AUTH_DIR, fs::Permissions::from_mode(0o700))?;
+    fs::set_permissions(COMM_DIR, fs::Permissions::from_mode(0o750))?;
 
     Ok( () )
 }
@@ -124,27 +122,10 @@ pub fn create_paths() -> std::io::Result<()> {
 pub fn run_as_daemon<L>(log: &L, options: Options) -> Result<(), DaemonFailure>
 where L: ConstructableLogger + 'static,
 L::Err: Debug {
-    let stdout_path = options.stdout.as_deref().unwrap_or(STD_OUT_PATH);
-    let stderr_path = options.stderr.as_deref().unwrap_or(STD_ERR_PATH);
-
-    let constructor = || -> Result<(File, File), std::io::Error> {
-        Ok( ( File::create(stdout_path)?, File::create(stderr_path)? ) )
-    };
-
-    let (stdout, stderr) = match constructor() {
-        Ok(v) => v,
-        Err(e) => {
-            log_critical!(log, "Unable to construct the stdout and/or stderr files at '{}' and '{}', respectivley. Reason: '{e}'", stdout_path, stderr_path);
-            return Err( DaemonFailure::SetupStreamError );
-        }
-    };
-
     log_info!(log, "Starting regisd as a daemon...");
 
     let daemonize = Daemonize::new()
         .pid_file(PID_PATH)
-        .stdout(stdout)
-        .stderr(stderr)
         .chown_pid_file(true)
         .working_directory("/");
 
