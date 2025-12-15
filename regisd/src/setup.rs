@@ -1,6 +1,6 @@
 use exdisj::{
     io::log::{
-        ConstructableLogger, LoggerLevel, LoggerRedirectConfiguration, OsLogErr, OsLogger, RedirectedLogger
+        ConstructableLogger, LoggerLevel, LoggerRedirectConfiguration, OsLogErr, OsLogger, RedirectedLogger, Logger
     }, log_critical, log_info
 };
 
@@ -13,7 +13,7 @@ use crate::failure::DaemonFailure;
 use tokio::runtime::Runtime;
 use daemonize::Daemonize;
 
-use std::{fmt::Debug, fs::{self, File}, io::stdout};
+use std::{fmt::Debug, fs, io::stdout};
 use std::os::unix::fs::PermissionsExt;
 
 use clap::Parser;
@@ -101,20 +101,22 @@ pub fn start_logger(options: &Options) -> Result<RedirectedLogger<OsLogger>, OsL
     )
 }
 
-pub fn create_paths() -> std::io::Result<()> {
-    println!("Making directories");
+pub fn create_paths(log: &impl Logger) -> std::io::Result<()> {
+    log_info!(log, "Creating directories.");
 
     create_dir_all(TOTAL_DIR)?;
     create_dir_all(DAEMON_DIR)?;
     create_dir_all(DAEMON_AUTH_DIR)?;
     create_dir_all(COMM_DIR)?;
 
-    println!("Setting permissions");
+    log_info!(log, "Directories created. Setting permissions.");
 
     fs::set_permissions(TOTAL_DIR, fs::Permissions::from_mode(0o755))?;
     fs::set_permissions(DAEMON_DIR, fs::Permissions::from_mode(0o755))?;
     fs::set_permissions(DAEMON_AUTH_DIR, fs::Permissions::from_mode(0o700))?;
     fs::set_permissions(COMM_DIR, fs::Permissions::from_mode(0o750))?;
+
+    log_info!(log, "Regis Daemon directories created and configured.");
 
     Ok( () )
 }

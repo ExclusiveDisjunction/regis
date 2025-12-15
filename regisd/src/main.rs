@@ -21,11 +21,6 @@ use clap::Parser;
 
 fn run() -> Result<(), DaemonFailure> {
     let cli = setup::Options::parse();
-    if let Err(e) = setup::create_paths() {
-        eprintln!("Unable to create paths. '{e}'");
-        return Err( DaemonFailure::SetupDirectoryError );
-    }
-
     let logger = match setup::start_logger(&cli) {
         Ok(v) => v,
         Err(e) => {
@@ -35,6 +30,12 @@ fn run() -> Result<(), DaemonFailure> {
     };
 
     log_info!(&logger, "Launching regisd...");
+
+    if let Err(e) = setup::create_paths(&logger) {
+        eprintln!("Unable to create paths. '{e}'");
+        return Err( DaemonFailure::SetupDirectoryError );
+    }
+
 
     log_info!(&logger, "Loading configuration");
     if let Err(e) = CONFIG.open(DAEMON_CONFIG_PATH) {

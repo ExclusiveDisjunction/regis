@@ -1,6 +1,5 @@
 use std::process::ExitCode;
 use std::io::Error as IOError;
-use std::fs::create_dir_all;
 
 use exdisj::{
     log_critical, 
@@ -9,13 +8,12 @@ use exdisj::{
     log_info,
     log_warning,
     io::log::{
-        ConsoleColor, 
         Logger, 
         LoggerLevel, 
-        LoggerRedirect, 
-        Prefix,
-        ChanneledLogger,
-        LoggerBase
+        ConstructableLogger,
+        RedirectedLogger,
+        LoggerRedirectConfiguration,
+        OsLogger
     }
 };
 use tokio::{
@@ -32,10 +30,7 @@ use tokio::{
     }
 };
 use common::{
-    loc::{
-        CLIENTS_PORT,
-        CONSOLE_LOG_DIR
-    },
+    loc::CLIENTS_PORT,
     config::DaemonConfig,
     usr::ClientUserInformation,
     msg::{
@@ -52,10 +47,10 @@ use common::{
 };
 use clap::{Parser, ValueEnum};
 
-pub fn cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), ExitCode> {
+pub fn cli_entry<L1, L2>(logger: L1, backend: L2) -> Result<(), ExitCode> 
+where L1: ConstructableLogger, L2: ConstructableLogger + 'static,
+L2::Err: std::error::Error + Send + Sync {
     // The CLI runs entirely in Tokio, so we need to create a runtime and run the entry.
-
-    let their_logger = logger.clone();
 
     log_debug!(&logger, "Starting up tokio runtime");
     let runtime = match Runtime::new() {
@@ -66,18 +61,15 @@ pub fn cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<()
         }
     };
     let result = runtime.block_on(async move {
-        async_cli_entry(their_logger, backend).await
+        async_cli_entry(logger, backend).await
     });
 
-    match result {
-        Ok(_) => {
-            log_info!(&logger, "Regisc completed with no issues.");
-            Ok( () )
-        }
-        Err(e) => {
-            log_error!(&logger, "Regisc completed with the error {e:?}");
-            Err( ExitCode::FAILURE )
-        }
+    if let Err(e) = result {
+        eprintln!("Regisc completed with the error {e:?}");
+        Err( ExitCode::FAILURE )
+    }
+    else {
+        Ok( () )
     }
 }
 
@@ -100,7 +92,7 @@ impl From<ConnectionError> for MainLoopFailure {
 
 pub async fn prompt_raw<V>(content: &V, stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) -> Result<String, IOError> 
     where V: AsRef<[u8]> + ?Sized {
-        stdout.write(content.as_ref()).await?;
+        stdout.write_all(content.as_ref()).await?;
         stdout.flush().await?;
 
         let raw_command = lines.next_line()
@@ -119,12 +111,12 @@ pub enum ConfigCommands {
     Get,
     Update
 }
-impl Into<BackendRequests> for ConfigCommands {
-    fn into(self) -> BackendRequests {
-        match self {
-            Self::Reload => BackendRequests::ReloadConfig,
-            Self::Get => BackendRequests::GetConfig,
-            Self::Update => todo!("Implement the system that converts this into a series of commands")
+impl From<ConfigCommands> for BackendRequests {
+    fn from(value: ConfigCommands) -> BackendRequests {
+        match value {
+            ConfigCommands::Reload => BackendRequests::ReloadConfig,
+            ConfigCommands::Get => BackendRequests::GetConfig,
+            ConfigCommands::Update => todo!("Implement the system that converts this into a series of commands.")
         }
     }
 }
@@ -137,14 +129,14 @@ pub enum AuthCommands {
     Users,
     History { id: u64 }
 }
-impl Into<ConsoleAuthRequests> for AuthCommands {
-    fn into(self) -> ConsoleAuthRequests {
-        match self {
-            Self::Pending => ConsoleAuthRequests::Pending,
-            Self::Users => ConsoleAuthRequests::AllUsers,
-            Self::History { id } => ConsoleAuthRequests::UserHistory(id),
-            Self::Approve { id, name} => ConsoleAuthRequests::Approve(id, name),
-            Self::Revoke { id } => ConsoleAuthRequests::Revoke(id)
+impl From<AuthCommands> for ConsoleAuthRequests {
+    fn from(value: AuthCommands) -> ConsoleAuthRequests {
+        match value {
+            AuthCommands::Pending => ConsoleAuthRequests::Pending,
+            AuthCommands::Users => ConsoleAuthRequests::AllUsers,
+            AuthCommands::History { id } => ConsoleAuthRequests::UserHistory(id),
+            AuthCommands::Approve { id, name} => ConsoleAuthRequests::Approve(id, name),
+            AuthCommands::Revoke { id } => ConsoleAuthRequests::Revoke(id)
         }
     }
 }
@@ -166,13 +158,13 @@ pub struct CliParser {
     command: CliCommands
 }
 
-pub fn print_auth_approve_result<L: LoggerBase>(logger: &L, name: &str, message: Option<ClientUserInformation>) {
+pub fn print_auth_approve_result<L: Logger>(logger: &L, name: &str, message: Option<ClientUserInformation>) {
     match message {
         Some(info) => println!("User with id {} ({name}) was approved.", info.id()),
         None => log_error!(logger, "The user '{name}' was not approved.")
     }
 }
-pub fn print_revoke_result<L: LoggerBase>(logger: &L, id: u64, message: Option<bool>) {
+pub fn print_revoke_result<L: Logger>(logger: &L, id: u64, message: Option<bool>) {
     match message {
         Some(true) => println!("User with id {id} was revoked."),
         Some(false) => println!("User with id {id} could not be revoked (Perhaps it has a different id?)."),
@@ -180,8 +172,8 @@ pub fn print_revoke_result<L: LoggerBase>(logger: &L, id: u64, message: Option<b
     }
 }
 
-pub fn print_with_deserialization<'de, L: LoggerBase, V: serde::Deserialize<'de>, F>(logger: &L, message: &'de [u8], inner: F) where F: FnOnce(V) -> () {
-    match serde_json::from_slice::<V>(&message) {
+pub fn print_with_deserialization<'de, L: Logger, V: serde::Deserialize<'de>, F>(logger: &L, message: &'de [u8], inner: F) where F: FnOnce(V) {
+    match serde_json::from_slice::<V>(message) {
         Ok(value) => inner(value),
         Err(e) => log_error!(logger, "Unable to decode the users (error: '{e:?}'.")
     }
@@ -220,7 +212,7 @@ pub fn print_pending_users_table(pending_users: Vec<PendingUser>) {
     }
 }
 
-pub fn print_auth_response<L: LoggerBase>(logger: &L, inner: AuthCommands, message: &[u8]) {
+pub fn print_auth_response<L: Logger>(logger: &L, inner: AuthCommands, message: &[u8]) {
     match inner {
         AuthCommands::Approve { id: _, name } => print_auth_approve_result(logger, &name, serde_json::from_slice(message).ok()),
         AuthCommands::Revoke { id } => print_revoke_result(logger, id, serde_json::from_slice(message).ok()),
@@ -245,10 +237,10 @@ pub async fn prompt_command(stdout: &mut Stdout, lines: &mut Lines<BufReader<Std
     }
 }
 
-pub async fn process_config_update_prompt<L: LoggerBase, T, F>(logger: &L, prompt: &str, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>, default: T, curr: T, mut update: F) 
+pub async fn process_config_update_prompt<L: Logger, T, F>(logger: &L, prompt: &str, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>, default: T, curr: T, mut update: F) 
     where T: std::fmt::Display + std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
-    F: FnMut(T) -> () {
+    F: FnMut(T) {
     
     let prompt = format!("{prompt} (Def: {}, Curr: {}): ", default, curr);
     match prompt_raw(&prompt, stdout, line).await {
@@ -269,12 +261,11 @@ pub async fn process_config_update_prompt<L: LoggerBase, T, F>(logger: &L, promp
         },
         Err(e) => {
             log_error!(logger, "Unable to get next line {e:?}");
-            return;
         }
     }
 }
 
-pub async fn update_config<L: LoggerBase>(logger: &L, backend: &mut Backend, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>) {
+pub async fn update_config<L: Logger, L2: ConstructableLogger>(logger: &L, backend: &mut Backend<L2>, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>) {
     log_debug!(logger, "Getting previous configuration.");
     let raw_bytes = match backend.send_with_response(BackendRequests::GetConfig).await {
         Some(v) => match v {
@@ -360,7 +351,9 @@ pub async fn update_config<L: LoggerBase>(logger: &L, backend: &mut Backend, std
 
 }
 
-pub async fn async_cli_entry(logger: ChanneledLogger, backend: ChanneledLogger) -> Result<(), MainLoopFailure> {
+pub async fn async_cli_entry<L1: ConstructableLogger, L2>(logger: L1, backend: L2) -> Result<(), MainLoopFailure> 
+where L2::Err: std::error::Error + Send + Sync,
+L2: 'static + ConstructableLogger  {
     println!("Regis Console v{REGISC_VERSION}");
 
     log_info!(&logger, "Starting up backend");
@@ -522,11 +515,6 @@ struct Options {
     /// When used, regisc will output more log messages. The default is false, and the default level will be warning.
     #[arg(short, long)]
     verbose: bool,
-
-    /// When used, regisc will open as a graphical user interface. Cannot be combined with --quick.
-    #[cfg(feature="gui")]
-    #[arg(long)]
-    gui: bool
 }
 
 pub fn main() -> Result<(), ExitCode> {
@@ -535,51 +523,54 @@ pub fn main() -> Result<(), ExitCode> {
 
     // Establish logger
     let level: LoggerLevel;
-    let redirect: LoggerRedirect;
+    let redirect: Option<LoggerLevel>;
     if cfg!(debug_assertions) || command.verbose {
         level = LoggerLevel::Debug;
-        redirect = LoggerRedirect::new(Some(LoggerLevel::Debug), true);
+        redirect = Some(LoggerLevel::Debug);
     }
     else {
-        level = LoggerLevel::Warning;
-        redirect = LoggerRedirect::default();
+        level = LoggerLevel::Info;
+        redirect = None;
     }
 
-    if let Err(e) = create_dir_all(CONSOLE_LOG_DIR) {
-        eprintln!("Unable to startup logs. Checking of directory structure failed '{e}'.");
-        return Err( ExitCode::FAILURE );
-    }
-
-    let today = chrono::Local::now();
-    let logger_path = format!("{}{:?}-run.log", CONSOLE_LOG_DIR, today);
-
-    let logger = match Logger::new(logger_path, level, redirect)  {
+    let inner_logger = match OsLogger::new("com.exdisj.regis.console", level, "Main".into(), ()) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Error! Unable to start log (error: '{e}'). Exiting.");
+            eprintln!("Unable to start the logger due to error: '{e:?}'");
             return Err( ExitCode::FAILURE );
         }
     };
+    let stdout_redirect = if let Some(level) = redirect {
+       LoggerRedirectConfiguration::new(std::io::stdout(), level, Some(LoggerLevel::Warning))
+    }
+    else {
+        LoggerRedirectConfiguration::new_inactive(std::io::stdout())
+    };
+
+    let logger = RedirectedLogger::new_configured(inner_logger, stdout_redirect, Default::default());
+
 
     if let Some(q) = command.quick {
         log_info!(&logger, "Sending quick command {q:?}");
-
-        
 
         return Ok( () ); 
     }
 
     log_info!(&logger, "Starting runtime");
-    let runtime_channel = logger.make_channel(Prefix::new_const("Runtime", ConsoleColor::Green));
-    let end_channel = logger.make_channel(Prefix::new_const("User", ConsoleColor::Cyan));
+    let (runtime_channel, end_channel) = match (logger.make_channel("Runtime".into()), logger.make_channel("User".into())) {
+        (Ok(l1), Ok(l2)) => (l1, l2),
+        (Ok(_), Err(e)) | (Err(e), Ok(_)) => {
+            log_error!(&logger, "Unable to make one channel: '{e:?}'");
+            return Err(ExitCode::FAILURE);
+        },
+        (Err(e1), Err(e2)) => {
+            log_error!(&logger, "Unable to make both channels: '{e1:?}' and '{e2:?}'");
+            return Err(ExitCode::FAILURE);
+        }
+    };
 
     if let Some(quick) = command.quick {
         panic!("Quick commands are not complete yet. Cannot complete {quick:?} request.");
-    }
-
-    #[cfg(feature="gui")]
-    if command.gui {
-        panic!("the gui section of the program is not ready yet.");
     }
 
     // Now we do the CLI entry.
