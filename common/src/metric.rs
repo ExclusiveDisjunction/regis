@@ -7,7 +7,7 @@ pub use exdisj::io::metric::{Utilization, BinaryNumber, BinaryScale, PrettyPrint
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
 
 /// Stores the information about a specific memory section. 
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize, Default)]
 pub struct MemoryMetric {
     pub device: String,
     pub total: BinaryNumber,

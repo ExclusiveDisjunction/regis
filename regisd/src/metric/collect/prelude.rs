@@ -2,7 +2,7 @@
 pub use common::metric::{MemoryMetric, NetworkMetric, CpuMetric, CollectedMetrics, StorageMetric};
 use chrono::Utc;
 
-pub trait MetricsCollector {
+pub(crate) trait MetricsCollector {
     async fn memory() -> Vec<MemoryMetric>;
     async fn network() -> Vec<NetworkMetric>;
     async fn cpu() -> Option<CpuMetric>;

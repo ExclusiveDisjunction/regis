@@ -31,6 +31,7 @@ pub mod bsd;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+/*
 pub async fn collect_memory() -> Option<MultiValuedMetric<MemoryMetric>> {
     if cfg!(target_os = "linux") {
         let output = Command::new("free").arg("-b").output().await.ok()?;
@@ -360,16 +361,16 @@ pub async fn collect_process_count() -> Option<ProcessCount> {
         }
     )
 }
+*/
 
 pub async fn collect_all_snapshots() -> CollectedMetrics {
     let time = chrono::Utc::now();
 
     CollectedMetrics {
         time,
-        memory: collect_memory().await,
-        storage: collect_storage().await,
-        cpu: collect_cpu().await,
-        network: collect_network().await,
-        proc_count: collect_process_count().await
+        memory: vec![],
+        storage: vec![],
+        cpu: None,
+        network: vec![],
     }
 }
