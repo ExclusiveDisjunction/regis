@@ -6,30 +6,6 @@ pub use exdisj::io::metric::{Utilization, BinaryNumber, BinaryScale, PrettyPrint
 
 pub trait Metric: PartialEq + Debug + Clone + Serialize { }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MultiValuedMetric<T> {
-    inner: Vec<T>
-}
-impl<T> Metric for MultiValuedMetric<T> where T: Metric { }
-impl<T> MultiValuedMetric<T> {
-    pub fn new<V>(inner: V) -> Self 
-    where V: Into<Vec<T>> {
-        Self {
-            inner: inner.into()
-        }
-    }
-    pub fn new_iter<I>(iter: I) -> Self 
-    where I: IntoIterator<Item = T> {
-        Self {
-            inner: iter.into_iter().collect()
-        }
-    }
-
-    pub fn values(&self) -> &[T] {
-        &self.inner
-    }
-}
-
 /// Stores the information about a specific memory section. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryMetric {
@@ -78,14 +54,6 @@ pub struct CpuMetric {
 }
 impl Metric for CpuMetric {}
 
-/// Stores information about how many processes are running.
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
-pub struct ProcessCount {
-    /// The number of running processes
-    pub count: u64
-}
-impl Metric for ProcessCount {}
-
 /// Stores the information for either the receive or transmitting section of the network. 
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMetricSection {
@@ -131,36 +99,30 @@ impl Metric for NetworkMetric { }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct CollectedMetrics {
     pub time: DateTime<Utc>,
-    pub memory: Option<MultiValuedMetric<MemoryMetric>>,
-    pub storage: Option<MultiValuedMetric<StorageMetric>>,
+    pub memory: Vec<MemoryMetric>,
+    pub storage: Vec<StorageMetric>,
     pub cpu: Option<CpuMetric>,
-    pub network: Option<MultiValuedMetric<NetworkMetric>>,
-    pub proc_count: Option<ProcessCount>
+    pub network: Vec<NetworkMetric>,
 }
 
 const TAB1: &str = "\t";
-//const TAB2: &str = "\t\t";
-//const TAB3: &str = "\t\t\t";
 
 pub struct CollectedMetricsFormatter<'a>(&'a CollectedMetrics);
 impl Display for CollectedMetricsFormatter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Metrics at time {}", self.0.time)?;
 
-        if let Some(mem) = self.0.memory.as_ref() {
-            Self::fmt_memory(f, mem.values())?;
+        if !self.0.memory.is_empty() {
+            Self::fmt_memory(f, &self.0.memory)?;
         }
-        if let Some(storage) = self.0.storage.as_ref() {
-            Self::fmt_storage(f, storage.values())?;
+        if !self.0.storage.is_empty() {
+            Self::fmt_storage(f, &self.0.storage)?;
         }
         if let Some(cpu) = self.0.cpu.as_ref() {
             Self::fmt_cpu(f, cpu)?;
         }
-        if let Some(network) = self.0.network.as_ref() {
-            Self::fmt_network(f, network.values())?;
-        }
-        if let Some(proc_count) = self.0.proc_count.as_ref() {
-            Self::fmt_proc_count(f, proc_count)?;
+        if !self.0.network.is_empty() {
+            Self::fmt_network(f, &self.0.network)?;
         }
 
         Ok( () )
@@ -203,9 +165,6 @@ impl<'a> CollectedMetricsFormatter<'a> {
         writeln!(f, "Todo tee hee, print {} elements", network.len())?;
 
         Ok( () )
-    }
-    fn fmt_proc_count(f: &mut std::fmt::Formatter<'_>, proc_count: &ProcessCount) -> std::fmt::Result {
-        writeln!(f, "Processes Running: {}", proc_count.count)
     }
 
     pub fn new(data: &'a CollectedMetrics) -> Self {

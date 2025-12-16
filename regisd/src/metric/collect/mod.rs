@@ -13,6 +13,24 @@ use tokio::process::Command;
 
 pub use common::metric::*;
 
+pub mod prelude;
+
+#[cfg(target_os = "macos")]
+pub mod mac;
+
+#[cfg(target_os = "linux")]
+pub mod linux;
+
+#[cfg(any(
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd"
+))]
+pub mod bsd;
+
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 pub async fn collect_memory() -> Option<MultiValuedMetric<MemoryMetric>> {
     if cfg!(target_os = "linux") {
         let output = Command::new("free").arg("-b").output().await.ok()?;

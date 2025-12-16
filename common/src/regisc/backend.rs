@@ -4,8 +4,25 @@ use crate::{config::DaemonConfig, msg::{ConsoleAuthRequests, ConsoleConfigReques
 use exdisj::{
     io::log::{ConstructableLogger, Logger}, log_debug, log_error, log_info, log_warning, task::{ChildComm, ShutdownError, TaskMessage, TaskOnce}
 };
+use serde::{Deserialize, Serialize};
 
 use super::conn::{Connection, ConnectionError};
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Default, clap::Args)]
+pub struct DaemonConfigUpdate {
+    /// The maximum number of console connections allowed.
+    #[arg(long = "mconsole")]
+    pub max_console: Option<u8>,
+    /// THe maximum number of client connections allowed.
+    #[arg(long = "mclient")]
+    pub max_hosts: Option<u8>,
+    /// The port used for client connections.
+    #[arg(long = "port")]
+    pub hosts_port: Option<u16>,
+    /// In seconds, how frequently the system records metrics.
+    #[arg(long = "freq")]
+    pub metric_freq: Option<u64>
+}
 
 #[derive(Clone, Debug)]
 pub enum BackendRequests {
@@ -14,37 +31,22 @@ pub enum BackendRequests {
     Auth(ConsoleAuthRequests),
     ReloadConfig,
     GetConfig,
-    UpdateConfig(DaemonConfig)
+    UpdateConfig(DaemonConfigUpdate)
 }
 
-#[derive(Clone, Debug)]
-pub enum BackendError {
-
-}
-impl Display for BackendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Nothing so far...")
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum BackendMessage {
     Req(BackendRequests),
-    Resp(Result<Vec<u8>, BackendError>)
+    Resp(Result<Vec<u8>, ConnectionError>)
 }
 impl From<BackendRequests> for BackendMessage {
     fn from(value: BackendRequests) -> Self {
         Self::Req(value)
     }
 }
-impl From<Result<Vec<u8>, BackendError>> for BackendMessage {
-    fn from(value: Result<Vec<u8>, BackendError>) -> Self {
+impl From<Result<Vec<u8>, ConnectionError>> for BackendMessage {
+    fn from(value: Result<Vec<u8>, ConnectionError>) -> Self {
         Self::Resp(value)
-    }
-}
-impl From<BackendError> for BackendMessage {
-    fn from(value: BackendError) -> Self {
-        Self::Resp(Err(value))
     }
 }
 impl BackendMessage {
@@ -54,7 +56,7 @@ impl BackendMessage {
             Self::Resp(_) => None
         }
     }
-    pub fn as_response(self) -> Option<Result<Vec<u8>, BackendError>> {
+    pub fn as_response(self) -> Option<Result<Vec<u8>, ConnectionError>> {
         match self {
             Self::Req(_) => None,
             Self::Resp(r) => Some(r)
@@ -75,7 +77,32 @@ where L: Logger + 'static {
         BackendRequests::ReloadConfig => ConsoleRequests::Config(ConsoleConfigRequests::Reload),
         BackendRequests::Auth(v) => ConsoleRequests::Auth(v),
         BackendRequests::GetConfig => ConsoleRequests::Config(ConsoleConfigRequests::Get),
-        BackendRequests::UpdateConfig(config) => ConsoleRequests::Config(ConsoleConfigRequests::Set(config))
+        BackendRequests::UpdateConfig(config_diff) => {
+            // We must collect the previous metrics, make the changes, and then respond.
+            let config_message = stream.send_with_response_bytes(
+                ConsoleRequests::Config(ConsoleConfigRequests::Get)
+            ).await?;
+            let mut config: DaemonConfig = match serde_json::from_slice(&config_message) {
+                Ok(v) => v,
+                Err(e) => return Err( ConnectionError::Serde(e) )
+            };
+           
+            if let Some(max_console) = config_diff.max_console {
+                config.max_console = max_console;
+            }
+            if let Some(max_hosts) = config_diff.max_hosts {
+                config.max_hosts = max_hosts;
+            }
+            if let Some(hosts_port) = config_diff.hosts_port {
+                config.hosts_port = hosts_port;
+            }
+            if let Some(metric_freq) = config_diff.metric_freq {
+                config.metric_freq = metric_freq;
+            }
+
+            // Now send back the previous config.
+            ConsoleRequests::Config(ConsoleConfigRequests::Set(config))
+        }
     };
     log_debug!(logger, "Sending request {:?} to regisd", &request);
     stream.send_with_response_bytes(request).await
@@ -164,10 +191,10 @@ impl<L> Backend<L> {
     pub async fn send(&self, value: BackendRequests) -> bool {
         self.task.send(value.into()).await
     }
-    pub async fn recv(&mut self) -> Option<Result<Vec<u8>, BackendError>> {
+    pub async fn recv(&mut self) -> Option<Result<Vec<u8>, ConnectionError>> {
         self.task.recv().await?.as_response()
     }
-    pub async fn send_with_response(&mut self, message: BackendRequests) -> Option<Result<Vec<u8>, BackendError>> {
+    pub async fn send_with_response(&mut self, message: BackendRequests) -> Option<Result<Vec<u8>, ConnectionError>> {
         if !self.send(message).await {
             return None
         }

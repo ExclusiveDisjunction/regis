@@ -30,7 +30,6 @@ use tokio::{
     }
 };
 use common::{
-    loc::CLIENTS_PORT,
     config::DaemonConfig,
     usr::ClientUserInformation,
     msg::{
@@ -40,7 +39,7 @@ use common::{
         UserSummary
     },
     regisc::{
-        backend::{Backend, BackendRequests},
+        backend::{Backend, BackendRequests, DaemonConfigUpdate},
         conn::ConnectionError,
         REGISC_VERSION
     }
@@ -105,18 +104,18 @@ pub async fn prompt(stdout: &mut Stdout, lines: &mut Lines<BufReader<Stdin>>) ->
     prompt_raw("> ", stdout, lines).await
 }
 
-#[derive(Debug, Clone, Copy, clap::Subcommand, PartialEq, Eq)]
+#[derive(Debug, Clone, clap::Subcommand, PartialEq, Eq)]
 pub enum ConfigCommands {
     Reload,
     Get,
-    Update
+    Update(DaemonConfigUpdate)
 }
 impl From<ConfigCommands> for BackendRequests {
     fn from(value: ConfigCommands) -> BackendRequests {
         match value {
             ConfigCommands::Reload => BackendRequests::ReloadConfig,
             ConfigCommands::Get => BackendRequests::GetConfig,
-            ConfigCommands::Update => todo!("Implement the system that converts this into a series of commands.")
+            ConfigCommands::Update(v) => BackendRequests::UpdateConfig(v)
         }
     }
 }
@@ -265,92 +264,6 @@ pub async fn process_config_update_prompt<L: Logger, T, F>(logger: &L, prompt: &
     }
 }
 
-pub async fn update_config<L: Logger, L2: ConstructableLogger>(logger: &L, backend: &mut Backend<L2>, stdout: &mut Stdout, line: &mut Lines<BufReader<Stdin>>) {
-    log_debug!(logger, "Getting previous configuration.");
-    let raw_bytes = match backend.send_with_response(BackendRequests::GetConfig).await {
-        Some(v) => match v {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                log_error!(logger, "Unable to retreive the previous configuration, erorr '{e:?}'");
-                return;
-            }
-        },
-        None => {
-            log_error!(logger, "The backend was not able to serve the request.");
-            return;
-        }
-    };
-    let mut configuration: DaemonConfig = match serde_json::from_slice(&raw_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            log_error!(logger, "Unable to decode the previous configuration. '{e:?}'");
-            return;
-        }
-    };
-
-    println!("The configuration settings will be listed.\nTo leave a value unchanged, leave the line blank.\nOtherwise, insert your new value.\n");
-
-    process_config_update_prompt(
-        logger, 
-        "# of maximum console connections", 
-        stdout,
-        line, 
-        4, 
-        configuration.max_console,
-        |x| configuration.max_console = x
-    ).await;
-     process_config_update_prompt(
-        logger, 
-        "# of maximum client connections", 
-        stdout,
-        line, 
-        6, 
-        configuration.max_hosts,
-        |x| configuration.max_hosts = x
-    ).await;
-    process_config_update_prompt(
-        logger, 
-        "port # for client connections", 
-        stdout,
-        line, 
-        CLIENTS_PORT, 
-        configuration.hosts_port,
-        |x| configuration.hosts_port = x
-    ).await;
-    process_config_update_prompt(
-        logger, 
-        "metrics collection frequency (s)", 
-        stdout,
-        line, 
-        3, 
-        configuration.metric_freq,
-        |x| configuration.metric_freq = x
-    ).await;
-
-    let new_setting_prompt = format!("Here are the new settings:\n{configuration:#?}\nAre you sure about these changes? (y/n) ");
-    let do_save = {
-        match prompt_raw(&new_setting_prompt, stdout, line).await {
-            Ok(v) => v == "true" || v == "yes" || v == "y" || v == "Y",
-            Err(_) => {
-                log_error!(logger, "Unable to decode yes or no.");
-                return;
-            }
-        }
-    };
-
-    if do_save {
-        log_info!(logger, "Sending the new configuration back to the server.");
-        
-        if backend.send_with_response(BackendRequests::UpdateConfig(configuration)).await.is_some() {
-            println!("New configuration saved.");
-        }
-        else {
-            println!("The new configuration could not be saved.");
-        }
-    }
-
-}
-
 pub async fn async_cli_entry<L1: ConstructableLogger, L2>(logger: L1, backend: L2) -> Result<(), MainLoopFailure> 
 where L2::Err: std::error::Error + Send + Sync,
 L2: 'static + ConstructableLogger  {
@@ -384,15 +297,7 @@ L2: 'static + ConstructableLogger  {
                 continue;
             },
             CliCommands::Poll => BackendRequests::Poll,
-            CliCommands::Config(config) => {
-                if config == &ConfigCommands::Update {
-                    update_config(&logger, &mut backend, &mut stdout, &mut lines).await;
-                    continue;
-                }
-                else {
-                    (*config).into()
-                }
-            },
+            CliCommands::Config(config) => config.clone().into(),
             CliCommands::Auth(auth) => {
                 BackendRequests::Auth(
                     auth.clone().into()
@@ -406,7 +311,7 @@ L2: 'static + ConstructableLogger  {
                 let message = match m {
                     Ok(v) => v,
                     Err(e) => {
-                        log_error!(&logger, "Unable to get the response due to error '{e}'");
+                        log_error!(&logger, "Unable to get the response due to error '{e:?}'");
                         continue;
                     }
                 };
@@ -417,11 +322,6 @@ L2: 'static + ConstructableLogger  {
                     CliCommands::Config(inner) => {
                         match inner {
                             ConfigCommands::Get => {
-                                if cfg!(debug_assertions) {
-                                    let as_string = String::from_utf8(message.clone()).expect("unable to decode the string");
-                                    log_debug!(&logger, "As string: {}", &as_string);
-                                }
-
                                 let config_values: Option<DaemonConfig> = match serde_json::from_slice(&message) {
                                     Ok(v) => v,
                                     Err(e) => {
@@ -438,7 +338,7 @@ L2: 'static + ConstructableLogger  {
                                 }
                             },
                             ConfigCommands::Reload => println!("The daemon has been notified of the changed configuration."),
-                            ConfigCommands::Update => todo!()
+                            ConfigCommands::Update(_) => println!("The configuration has been updated.")
                         }
                     },
                     CliCommands::Poll => println!("The daemon is active.")
